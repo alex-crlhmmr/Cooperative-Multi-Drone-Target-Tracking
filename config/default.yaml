@@ -1,0 +1,83 @@
+arena:
+  size: [500, 500, 500]       # meters (x, y, z)
+  dt: 0.1                     # sampling period for filters (seconds)
+  plot_box: 2000              # replay/plot bounding box half-size (meters)
+
+drones_min_altitude: 20.0     # trackers won't go below this (meters)
+
+sim:
+  pyb_freq: 480               # PyBullet physics frequency (Hz)
+  ctrl_freq: 48               # Control loop frequency (Hz)
+  gui: true
+  physics: "pyb_gnd_drag_dw"  # most realistic mode
+
+drones:
+  num_trackers: 4
+  model: "surveillance"           # surveillance (4kg quad) or cf2x (27g Crazyflie)
+  # Tracker spawning: random positions in a hollow sphere around target
+  tracker_min_radius: 100.0   # inner radius of spawn sphere (meters)
+  tracker_max_radius: 300.0   # outer radius of spawn sphere (meters)
+
+target:
+  # Target spawns at origin XY, random altitude
+  initial_xy: [0.0, 0.0]
+  min_altitude: 50.0          # min spawn height (meters)
+  max_altitude: 300.0         # max spawn height (meters)
+  speed: 12.0                 # m/s
+  process_noise_accel: 0.6    # sigma_a for Q matrix
+  trajectory: "multi_segment" # straight, single_turn, multi_segment, evasive
+  # Evasive trajectory tuning — controls how aggressive the maneuvers are
+  evasive:
+    speed_var: 0.3            # speed varies ±30% of nominal during maneuvers
+    turn_rate_max: 2.0        # max turn rate (rad/s), higher = tighter turns
+    climb_rate_factor: 0.3    # max climb/dive = factor × speed (0.3 → ±3.6 m/s at 12 m/s)
+    pitch_range_deg: 20.0     # initial heading pitch range (degrees)
+    maneuver_density: 0.04    # maneuvers per step (0.02=calm, 0.04=moderate, 0.08=chaotic)
+
+sensor:
+  mode: "geometric"            # or "camera"
+  fov_half_deg: 30
+  sigma_bearing_deg: 2.0
+  max_range: 300.0
+  range_ref: 100.0             # reference range for noise scaling
+  detection_prob_model: "range_dependent"  # or "constant"
+  p_detect_max: 0.99
+  p_detect_range_half: 250.0   # range at which detection prob = 0.5
+
+filters:
+  init:
+    P0_pos: 10000.0            # initial position variance (m^2)
+    P0_vel: 100.0              # initial velocity variance (m^2/s^2)
+    pf_range_min: 10.0         # min range for PF ray initialization (m)
+    pf_range_max: 500.0        # max range for PF ray initialization (m)
+  ekf: {}
+  ukf:
+    alpha: 0.5
+    beta: 2.0
+    kappa: 0.0
+  pf:
+    num_particles: 2000
+    resample_threshold: 0.5    # Neff / N
+    process_noise_factor: 5.0  # inflate Q for diffuse proposal (prevents degeneracy)
+    jitter_pos: 1.0            # direct position jitter std (m) per step
+    jitter_vel: 0.5            # direct velocity jitter std (m/s) per step
+
+consensus:
+  num_iterations: 5
+  step_size: 0.1               # epsilon
+  topologies: ["full", "ring", "star"]
+  dropout_probs: [0.0, 0.1, 0.2, 0.3, 0.5]
+
+monte_carlo:
+  num_runs: 100
+  episode_length: 200          # timesteps
+  blackout_steps: 20           # all drones None for this many steps = track loss
+
+rl:
+  lr: 3.0e-4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_eps: 0.2
+  epochs: 10
+  batch_size: 64
+  hidden_dim: 128

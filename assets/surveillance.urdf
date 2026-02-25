@@ -1,0 +1,115 @@
+<?xml version="1.0" ?>
+<!--
+  Surveillance quadrotor — representative of a mid-size UAV (~4kg).
+  Designed for 200-500m altitude operations at 15-20 m/s cruise speed.
+
+  Physics parameters derived from:
+    Mass: 4.0 kg (frame + battery + payload)
+    Arm length: 0.40 m (tip-to-tip ~1.13m in X config)
+    Prop diameter: 15" (0.381m), radius 0.19m
+    Thrust-to-weight: 2.5
+    Max speed: 70 km/h (~19.4 m/s)
+
+  Thrust coefficient kf:
+    Hover thrust = 4*kf*RPM² = M*g = 39.2 N
+    Target hover RPM ~4400 → kf = 5.0e-7
+  Torque coefficient km:
+    km/kf ratio ~0.02 → km = 1.0e-8
+  Inertia (uniform rod model + body):
+    Ixx = Iyy ≈ 0.05 kg·m², Izz ≈ 0.08 kg·m²
+-->
+
+<robot name="surveillance">
+
+  <properties arm="0.40" kf="5.0e-7" km="1.0e-8" thrust2weight="2.5" max_speed_kmh="70" gnd_eff_coeff="11.36859" prop_radius="0.19" drag_coeff_xy="9.1785e-7" drag_coeff_z="10.311e-7" dw_coeff_1="2267.18" dw_coeff_2=".16" dw_coeff_3="-.11" />
+
+  <link name="base_link">
+
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <mass value="4.0"/>
+      <inertia ixx="0.05" ixy="0.0" ixz="0.0" iyy="0.05" iyz="0.0" izz="0.08"/>
+    </inertial>
+
+    <visual>
+      <origin rpy="0 0 55" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="./cf2.dae" scale="10 10 10"/>
+      </geometry>
+      <material name="grey">
+        <color rgba=".5 .5 .5 1"/>
+      </material>
+    </visual>
+
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.25" length="0.12"/>
+      </geometry>
+    </collision>
+
+  </link>
+
+  <!-- Prop positions: X configuration, arm=0.40m → offset = 0.40/sqrt(2) ≈ 0.2828 -->
+
+  <link name="prop0_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.2828 -0.2828 0"/>
+      <mass value="0"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+  <joint name="prop0_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="prop0_link"/>
+  </joint>
+
+  <link name="prop1_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.2828 -0.2828 0"/>
+      <mass value="0"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+  <joint name="prop1_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="prop1_link"/>
+  </joint>
+
+  <link name="prop2_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.2828 0.2828 0"/>
+      <mass value="0"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+  <joint name="prop2_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="prop2_link"/>
+  </joint>
+
+  <link name="prop3_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.2828 0.2828 0"/>
+      <mass value="0"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+  <joint name="prop3_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="prop3_link"/>
+  </joint>
+
+  <link name="center_of_mass_link">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <mass value="0"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+  <joint name="center_of_mass_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="center_of_mass_link"/>
+  </joint>
+
+</robot>

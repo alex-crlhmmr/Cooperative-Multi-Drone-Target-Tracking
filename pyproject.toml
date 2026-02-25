@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "aa273-drone-tracking"
+version = "0.1.0"
+description = "Cooperative Multi-Drone Target Tracking with Distributed Bayesian Filtering and Learned Sensor Placement"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    "networkx>=3.0",
+    "pyyaml>=6.0",
+    "gymnasium>=0.29",
+    "pybullet>=3.2.5",
+    "torch>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ipython"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

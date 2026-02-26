@@ -13,20 +13,56 @@ FILTER_COLORS = {
     "EKF": "#2196F3",
     "UKF": "#FF9800",
     "PF": "#4CAF50",
+    "IMM": "#E91E63",
+    "ConsensusEKF": "#7B1FA2",
+    "ConsensusIMM": "#D32F2F",
 }
 FILTER_STYLES = {
     "EKF": "-",
     "UKF": "--",
     "PF": "-.",
+    "IMM": "-",
+    "ConsensusEKF": "--",
+    "ConsensusIMM": "-.",
 }
+
+# Ordered patterns for substring matching (more specific first)
+_COLOR_PATTERNS = [
+    ("Consensus IMM", "#D32F2F"),   # deep red
+    ("Consensus EKF", "#7B1FA2"),   # purple
+    ("IMM", "#E91E63"),             # pink
+    ("PF", "#4CAF50"),              # green
+    ("UKF", "#FF9800"),             # orange
+    ("EKF", "#2196F3"),             # blue
+]
+_STYLE_PATTERNS = [
+    ("Consensus IMM", "-."),
+    ("Consensus EKF", "--"),
+    ("IMM", (0, (5, 1))),           # densely dashed
+    ("PF", "-."),
+    ("UKF", "--"),
+    ("EKF", "-"),
+]
 
 
 def _get_color(name):
-    return FILTER_COLORS.get(name, "#999999")
+    # Exact match first
+    if name in FILTER_COLORS:
+        return FILTER_COLORS[name]
+    # Substring match
+    for pattern, color in _COLOR_PATTERNS:
+        if pattern in name:
+            return color
+    return "#999999"
 
 
 def _get_style(name):
-    return FILTER_STYLES.get(name, "-")
+    if name in FILTER_STYLES:
+        return FILTER_STYLES[name]
+    for pattern, style in _STYLE_PATTERNS:
+        if pattern in name:
+            return style
+    return "-"
 
 
 def _save_or_show(fig, save_path):

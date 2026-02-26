@@ -5,6 +5,8 @@ from .ekf import EKF
 from .ukf import UKF
 from .pf import PF
 from .consensus_ekf import ConsensusEKF
+from .imm import IMM
+from .consensus_imm import ConsensusIMM
 from .topology import generate_adjacency, apply_dropout
 from .measurement import (
     bearing_measurement,
@@ -18,7 +20,7 @@ from .measurement import (
 )
 
 __all__ = [
-    "BayesianFilter", "EKF", "UKF", "PF", "ConsensusEKF",
+    "BayesianFilter", "EKF", "UKF", "PF", "ConsensusEKF", "IMM", "ConsensusIMM",
     "generate_adjacency", "apply_dropout",
     "bearing_measurement", "bearing_jacobian", "measurement_noise_cov",
     "stack_measurements", "wrap_angle", "wrap_innovation",

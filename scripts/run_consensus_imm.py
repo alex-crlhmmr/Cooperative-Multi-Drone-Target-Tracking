@@ -94,7 +94,7 @@ def create_pf(cfg, dt):
     )
 
 
-def create_consensus_ekf(cfg, dt, topology, dropout, rng):
+def create_consensus_ekf(cfg, dt, topology, dropout, rng, metropolis=False):
     sigma_a = cfg["target"]["process_noise_accel"]
     sigma_bearing = np.deg2rad(cfg["sensor"]["sigma_bearing_deg"])
     range_ref = cfg["sensor"]["range_ref"]
@@ -112,10 +112,11 @@ def create_consensus_ekf(cfg, dt, topology, dropout, rng):
         P0_pos=finit.get("P0_pos", 10000.0),
         P0_vel=finit.get("P0_vel", 100.0),
         rng=rng,
+        metropolis=metropolis,
     )
 
 
-def create_consensus_imm(cfg, dt, topology, dropout, rng):
+def create_consensus_imm(cfg, dt, topology, dropout, rng, metropolis=False):
     sigma_bearing = np.deg2rad(cfg["sensor"]["sigma_bearing_deg"])
     range_ref = cfg["sensor"]["range_ref"]
     finit = cfg["filters"].get("init", {})
@@ -136,6 +137,7 @@ def create_consensus_imm(cfg, dt, topology, dropout, rng):
         P0_pos=finit.get("P0_pos", 10000.0),
         P0_vel=finit.get("P0_vel", 100.0),
         rng=rng,
+        metropolis=metropolis,
     )
 
 
@@ -405,6 +407,14 @@ def main():
     parser.add_argument("--centralized-gimbal", action="store_true")
     parser.add_argument("--all-topologies", action="store_true")
     parser.add_argument("--no-pf", action="store_true", help="Skip PF (faster)")
+    parser.add_argument("--metropolis", action="store_true",
+                        help="Use Metropolis-Hastings consensus weights (N-agnostic)")
+    parser.add_argument("--all-filters", action="store_true",
+                        help="Run all filters (default behavior)")
+    parser.add_argument("--only-consensus", action="store_true",
+                        help="Run only consensus EKF + consensus IMM")
+    parser.add_argument("--filters", type=str, default=None,
+                        help="Comma-separated filter list: ekf,imm,consensus-ekf,consensus-imm,pf")
     parser.add_argument("--save", action="store_true")
     parser.add_argument("--no-replay", action="store_true")
     args = parser.parse_args()
@@ -433,48 +443,66 @@ def main():
     else:
         topologies = [args.topology]
 
+    # Determine which filters to run
+    VALID_FILTER_KEYS = {"ekf", "imm", "consensus-ekf", "consensus-imm", "pf"}
+    if args.filters:
+        enabled = set(k.strip().lower() for k in args.filters.split(","))
+        unknown = enabled - VALID_FILTER_KEYS
+        if unknown:
+            parser.error(f"Unknown filter(s): {unknown}. Valid: {sorted(VALID_FILTER_KEYS)}")
+    elif args.only_consensus:
+        enabled = {"consensus-ekf", "consensus-imm"}
+    elif args.no_pf:
+        enabled = {"ekf", "imm", "consensus-ekf", "consensus-imm"}
+    else:
+        # --all-filters or default
+        enabled = VALID_FILTER_KEYS.copy()
+
     # Build filter list
     rng = np.random.default_rng(args.seed + 1000)
     filters = []
     filter_names = []
 
-    # 1. Centralized EKF
-    filters.append(create_centralized_ekf(cfg, dt))
-    filter_names.append("Centralized EKF")
+    def _consensus_label(prefix, topo):
+        label = f"{prefix} ({topo}"
+        if args.metropolis:
+            label += ", MH"
+        if args.dropout > 0:
+            label += f", drop={args.dropout}"
+        label += ")"
+        return label
 
-    # 2. Centralized IMM
-    filters.append(create_centralized_imm(cfg, dt))
-    filter_names.append("Centralized IMM")
+    if "ekf" in enabled:
+        filters.append(create_centralized_ekf(cfg, dt))
+        filter_names.append("Centralized EKF")
 
-    # 3. Consensus EKF (first topology)
-    filters.append(create_consensus_ekf(cfg, dt, topologies[0], args.dropout, rng))
-    label_cekf = f"Consensus EKF ({topologies[0]}"
-    if args.dropout > 0:
-        label_cekf += f", drop={args.dropout}"
-    label_cekf += ")"
-    filter_names.append(label_cekf)
+    if "imm" in enabled:
+        filters.append(create_centralized_imm(cfg, dt))
+        filter_names.append("Centralized IMM")
 
-    # 4. Consensus IMM (first topology)
-    filters.append(create_consensus_imm(cfg, dt, topologies[0], args.dropout, rng))
-    label_cimm = f"Consensus IMM ({topologies[0]}"
-    if args.dropout > 0:
-        label_cimm += f", drop={args.dropout}"
-    label_cimm += ")"
-    filter_names.append(label_cimm)
+    if "consensus-ekf" in enabled:
+        filters.append(create_consensus_ekf(cfg, dt, topologies[0], args.dropout, rng,
+                                            metropolis=args.metropolis))
+        filter_names.append(_consensus_label("Consensus EKF", topologies[0]))
 
-    # 5. PF god-node (optional)
-    if not args.no_pf:
+    if "consensus-imm" in enabled:
+        filters.append(create_consensus_imm(cfg, dt, topologies[0], args.dropout, rng,
+                                            metropolis=args.metropolis))
+        filter_names.append(_consensus_label("Consensus IMM", topologies[0]))
+
+    if "pf" in enabled:
         filters.append(create_pf(cfg, dt))
         filter_names.append("PF (god-node)")
 
     # Additional topologies for consensus IMM
-    for topo in topologies[1:]:
-        filters.append(create_consensus_imm(cfg, dt, topo, args.dropout, rng))
-        label = f"Consensus IMM ({topo}"
-        if args.dropout > 0:
-            label += f", drop={args.dropout}"
-        label += ")"
-        filter_names.append(label)
+    if "consensus-imm" in enabled:
+        for topo in topologies[1:]:
+            filters.append(create_consensus_imm(cfg, dt, topo, args.dropout, rng,
+                                                metropolis=args.metropolis))
+            filter_names.append(_consensus_label("Consensus IMM", topo))
+
+    if not filters:
+        parser.error("No filters selected! Check --filters / --only-consensus flags.")
 
     print(f"Running IMM experiment: traj={traj_type}, steps={args.steps}, "
           f"seed={args.seed}, drones={cfg['drones']['num_trackers']}")
@@ -517,9 +545,15 @@ def main():
     if local_estimates is not None:
         # Find the first consensus filter index
         ci = next(i for i, f in enumerate(filters) if isinstance(f, (ConsensusEKF, ConsensusIMM)))
+        # Find centralized baseline (EKF preferred, then IMM, else None)
+        cent_idx = next((i for i, f in enumerate(filters) if isinstance(f, EKF)), None)
+        if cent_idx is None:
+            cent_idx = next((i for i, f in enumerate(filters) if isinstance(f, IMM)), None)
+        cent_est = estimates[cent_idx] if cent_idx is not None else None
+        cent_label = filter_names[cent_idx] if cent_idx is not None else "Centralized"
         plot_per_drone_estimates(
             time_axis, true_states, local_estimates, estimates[ci],
-            estimates[0], filter_names[ci],
+            cent_est, filter_names[ci], cent_label,
             save_path=f"{save_prefix}_per_drone.png" if save_prefix else None,
         )
 
@@ -540,15 +574,21 @@ def main():
         # Find consensus filter indices (EKF and IMM)
         cekf_idx = next((i for i, f in enumerate(filters) if isinstance(f, ConsensusEKF)), None)
         cimm_idx = next((i for i, f in enumerate(filters) if isinstance(f, ConsensusIMM)), None)
+        ekf_idx = next((i for i, f in enumerate(filters) if isinstance(f, EKF)), None)
+        imm_idx = next((i for i, f in enumerate(filters) if isinstance(f, IMM)), None)
 
         # Replay 1: Consensus EKF vs Centralized EKF
         if cekf_idx is not None:
-            # Recompute local estimates from consensus EKF (local_estimates are from first consensus filter)
-            print("\n>> Replay: Consensus EKF vs Centralized EKF <<")
+            cent_est = estimates[ekf_idx] if ekf_idx is not None else None
+            cent_name = "Centralized EKF" if ekf_idx is not None else ""
+            title_parts = [f"Consensus EKF"]
+            if cent_name:
+                title_parts.insert(0, cent_name)
+            print(f"\n>> Replay: {' vs '.join(title_parts)} <<")
             animate_consensus_tracking(
                 drone_positions=record["drone_positions"],
                 target_true_states=true_states,
-                centralized_est=estimates[0],   # Centralized EKF
+                centralized_est=cent_est,
                 consensus_est=estimates[cekf_idx],
                 local_estimates=local_estimates,
                 adjacency=adj,
@@ -557,20 +597,23 @@ def main():
                 active_edges=active_edges,
                 dt=dt,
                 interval_ms=max(10, int(dt * 1000)),
-                title=f"Consensus EKF vs Centralized EKF — {topologies[0]} — {traj_type}",
+                title=f"{' vs '.join(title_parts)} — {topologies[0]} — {traj_type}",
                 plot_box=plot_box,
                 topology_name=topologies[0],
             )
 
         # Replay 2: Consensus IMM vs Centralized IMM
         if cimm_idx is not None:
-            imm_idx = next((i for i, f in enumerate(filters) if isinstance(f, IMM)), None)
-            baseline_idx = imm_idx if imm_idx is not None else 0
-            print("\n>> Replay: Consensus IMM vs Centralized IMM <<")
+            cent_est = estimates[imm_idx] if imm_idx is not None else None
+            cent_name = "Centralized IMM" if imm_idx is not None else ""
+            title_parts = [f"Consensus IMM"]
+            if cent_name:
+                title_parts.insert(0, cent_name)
+            print(f"\n>> Replay: {' vs '.join(title_parts)} <<")
             animate_consensus_tracking(
                 drone_positions=record["drone_positions"],
                 target_true_states=true_states,
-                centralized_est=estimates[baseline_idx],  # Centralized IMM
+                centralized_est=cent_est,
                 consensus_est=estimates[cimm_idx],
                 local_estimates=local_estimates,
                 adjacency=adj,
@@ -579,7 +622,7 @@ def main():
                 active_edges=active_edges,
                 dt=dt,
                 interval_ms=max(10, int(dt * 1000)),
-                title=f"Consensus IMM vs Centralized IMM — {topologies[0]} — {traj_type}",
+                title=f"{' vs '.join(title_parts)} — {topologies[0]} — {traj_type}",
                 plot_box=plot_box,
                 topology_name=topologies[0],
             )

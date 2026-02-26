@@ -26,8 +26,9 @@ def plot_per_drone_estimates(
     true_states: np.ndarray,
     local_estimates: np.ndarray,
     consensus_avg: np.ndarray,
-    centralized_est: np.ndarray,
+    centralized_est: np.ndarray | None = None,
     consensus_label: str = "Consensus",
+    centralized_label: str = "Centralized",
     save_path: str | None = None,
 ):
     """Plot per-drone local estimates vs consensus average vs centralized.
@@ -37,8 +38,9 @@ def plot_per_drone_estimates(
         true_states: (T, 6) ground truth
         local_estimates: (N, T, 6) per-drone estimates
         consensus_avg: (T, 6) consensus average estimate
-        centralized_est: (T, 6) centralized EKF estimate
+        centralized_est: (T, 6) centralized estimate, or None to omit
         consensus_label: label for consensus filter
+        centralized_label: label for centralized baseline
         save_path: if provided, save figure
     """
     N, T_local = local_estimates.shape[:2]
@@ -62,16 +64,21 @@ def plot_per_drone_estimates(
         ax.plot(time[:T], consensus_avg[:T, ax_i],
                 "b--", lw=1.5, label=consensus_label if ax_i == 0 else None, zorder=4)
 
-        # Centralized
-        ax.plot(time[:T], centralized_est[:T, ax_i],
-                "r-", lw=1.5, alpha=0.7, label="Centralized" if ax_i == 0 else None, zorder=3)
+        # Centralized (if available)
+        if centralized_est is not None:
+            ax.plot(time[:T], centralized_est[:T, ax_i],
+                    "r-", lw=1.5, alpha=0.7,
+                    label=centralized_label if ax_i == 0 else None, zorder=3)
 
         ax.set_ylabel(label)
         ax.grid(True, alpha=0.3)
 
     axes[0].legend(loc="upper right", fontsize=8, ncol=4)
     axes[-1].set_xlabel("Time (s)")
-    fig.suptitle("Per-Drone Local Estimates vs Consensus vs Centralized", fontsize=13)
+    title = "Per-Drone Local Estimates vs Consensus"
+    if centralized_est is not None:
+        title += f" vs {centralized_label}"
+    fig.suptitle(title, fontsize=13)
     _save_or_show(fig, save_path)
 
 

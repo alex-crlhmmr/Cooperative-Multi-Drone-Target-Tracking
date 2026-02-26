@@ -39,6 +39,7 @@ class ConsensusIMM(BayesianFilter):
         P0_pos: float = 10000.0,
         P0_vel: float = 100.0,
         rng: np.random.Generator | None = None,
+        metropolis: bool = False,
     ):
         self._dt = dt
         self._M = len(sigma_a_modes)
@@ -53,6 +54,7 @@ class ConsensusIMM(BayesianFilter):
         self._P0_pos = P0_pos
         self._P0_vel = P0_vel
         self._rng = rng or np.random.default_rng()
+        self._metropolis = metropolis
 
         # Per-drone sub-filter models
         self._models = [ConstantVelocityModel(dt, sa) for sa in sigma_a_modes]
@@ -175,6 +177,10 @@ class ConsensusIMM(BayesianFilter):
         N = self._N
         M = self._M
 
+        # Stash raw info contributions for MH degree-based scaling
+        dY_raw = [None] * N
+        dy_raw = [None] * N
+
         # --- Per-drone local IMM update ---
         for i in range(N):
             if measurements[i] is None:
@@ -247,27 +253,55 @@ class ConsensusIMM(BayesianFilter):
             dY = H_blend.T @ R_inv @ H_blend
             dy = H_blend.T @ R_inv @ (innov_blend + H_blend @ x_blend)
 
-            # N-scaling for consensus
-            self._Y[i] = self._Y[i] + N * dY
-            self._y[i] = self._y[i] + N * dy
+            if self._metropolis:
+                dY_raw[i] = dY
+                dy_raw[i] = dy
+            else:
+                # N-scaling for consensus
+                self._Y[i] = self._Y[i] + N * dY
+                self._y[i] = self._y[i] + N * dy
 
         # --- Consensus iterations ---
         adj_union = np.zeros_like(self._adj)
-        for _ in range(self._L):
+        for ell in range(self._L):
             adj_eff = apply_dropout(self._adj, self._dropout, self._rng)
             adj_union = np.maximum(adj_union, adj_eff)
 
-            Y_old = [Yi.copy() for Yi in self._Y]
-            y_old = [yi.copy() for yi in self._y]
+            if self._metropolis:
+                degrees = np.sum(adj_eff, axis=1).astype(int)
 
-            for i in range(N):
-                for j_nbr in range(N):
-                    if adj_eff[i, j_nbr]:
-                        self._Y[i] = self._Y[i] + self._eps * (Y_old[j_nbr] - Y_old[i])
-                        self._y[i] = self._y[i] + self._eps * (y_old[j_nbr] - y_old[i])
+                # On first consensus iteration, apply degree-based measurement scaling
+                if ell == 0:
+                    for i in range(N):
+                        if dY_raw[i] is not None:
+                            scale = degrees[i] + 1
+                            self._Y[i] = self._Y[i] + scale * dY_raw[i]
+                            self._y[i] = self._y[i] + scale * dy_raw[i]
+
+                Y_old = [Yi.copy() for Yi in self._Y]
+                y_old = [yi.copy() for yi in self._y]
+
+                for i in range(N):
+                    d_i = degrees[i]
+                    for j_nbr in range(N):
+                        if adj_eff[i, j_nbr]:
+                            d_j = degrees[j_nbr]
+                            w_ij = 1.0 / (1.0 + max(d_i, d_j))
+                            self._Y[i] = self._Y[i] + w_ij * (Y_old[j_nbr] - Y_old[i])
+                            self._y[i] = self._y[i] + w_ij * (y_old[j_nbr] - y_old[i])
+            else:
+                Y_old = [Yi.copy() for Yi in self._Y]
+                y_old = [yi.copy() for yi in self._y]
+
+                for i in range(N):
+                    for j_nbr in range(N):
+                        if adj_eff[i, j_nbr]:
+                            self._Y[i] = self._Y[i] + self._eps * (Y_old[j_nbr] - Y_old[i])
+                            self._y[i] = self._y[i] + self._eps * (y_old[j_nbr] - y_old[i])
 
             for i in range(N):
                 self._Y[i] = 0.5 * (self._Y[i] + self._Y[i].T)
+
 
         self._last_adj_eff = adj_union
 

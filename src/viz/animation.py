@@ -628,7 +628,7 @@ def animate_filter_tracking(
 def animate_consensus_tracking(
     drone_positions: np.ndarray,
     target_true_states: np.ndarray,
-    centralized_est: np.ndarray,
+    centralized_est: np.ndarray | None,
     consensus_est: np.ndarray,
     local_estimates: np.ndarray,
     adjacency: np.ndarray,
@@ -684,7 +684,9 @@ def animate_consensus_tracking(
     ax_info.axis('off')
 
     # Compute bounds
-    all_pts = [target_traj, centralized_est[:, :3], consensus_est[:, :3]]
+    all_pts = [target_traj, consensus_est[:, :3]]
+    if centralized_est is not None:
+        all_pts.append(centralized_est[:, :3])
     for di in range(num_drones):
         all_pts.append(drone_positions[:, di, :])
         all_pts.append(local_estimates[di, :, :3])
@@ -738,11 +740,14 @@ def animate_consensus_tracking(
     target_trail_line, = ax.plot([], [], [], color=target_color,
                                   linewidth=2.5, alpha=0.5, linestyle='--')
 
-    # Centralized estimate
-    central_dot, = ax.plot([], [], [], 's', color=central_color, markersize=11,
-                           label='Centralized EKF', zorder=5)
-    central_trail, = ax.plot([], [], [], color=central_color, linewidth=1.5,
-                              alpha=0.5, linestyle='-')
+    # Centralized estimate (if available)
+    central_dot = None
+    central_trail = None
+    if centralized_est is not None:
+        central_dot, = ax.plot([], [], [], 's', color=central_color, markersize=11,
+                               label='Centralized', zorder=5)
+        central_trail, = ax.plot([], [], [], color=central_color, linewidth=1.5,
+                                  alpha=0.5, linestyle='-')
 
     # Consensus average estimate
     cons_dot, = ax.plot([], [], [], 's', color=consensus_color, markersize=11,
@@ -925,10 +930,11 @@ def animate_consensus_tracking(
         tr = target_traj[start:t+1]
         target_trail_line.set_data_3d(tr[:, 0], tr[:, 1], tr[:, 2])
 
-        ce = centralized_est[t, :3]
-        central_dot.set_data_3d([ce[0]], [ce[1]], [ce[2]])
-        tr = centralized_est[start:t+1, :3]
-        central_trail.set_data_3d(tr[:, 0], tr[:, 1], tr[:, 2])
+        if centralized_est is not None:
+            ce = centralized_est[t, :3]
+            central_dot.set_data_3d([ce[0]], [ce[1]], [ce[2]])
+            tr = centralized_est[start:t+1, :3]
+            central_trail.set_data_3d(tr[:, 0], tr[:, 1], tr[:, 2])
 
         co = consensus_est[t, :3]
         cons_dot.set_data_3d([co[0]], [co[1]], [co[2]])

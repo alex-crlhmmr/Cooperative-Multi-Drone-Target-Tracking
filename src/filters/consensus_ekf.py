@@ -38,6 +38,7 @@ class ConsensusEKF(BayesianFilter):
         P0_pos: float = 10000.0,
         P0_vel: float = 100.0,
         rng: np.random.Generator | None = None,
+        metropolis: bool = False,
     ):
         self._dt = dt
         self._model = ConstantVelocityModel(dt, sigma_a)
@@ -51,6 +52,7 @@ class ConsensusEKF(BayesianFilter):
         self._P0_pos = P0_pos
         self._P0_vel = P0_vel
         self._rng = rng or np.random.default_rng()
+        self._metropolis = metropolis
 
         # Local information-form states: Y_i = P_i^{-1}, y_i = P_i^{-1} x_i
         self._Y = [np.zeros((6, 6)) for _ in range(self._N)]
@@ -109,6 +111,10 @@ class ConsensusEKF(BayesianFilter):
 
         N = self._N
 
+        # Stash raw info contributions for MH degree-based scaling
+        dY_raw = [None] * N
+        dy_raw = [None] * N
+
         # --- Local measurement update (information form) ---
         for i in range(N):
             # Get local state estimate for linearization
@@ -142,27 +148,57 @@ class ConsensusEKF(BayesianFilter):
                 # Pseudo-measurement: z_i - h_i + H_i @ x_i (linearized)
                 dy_i = H_i.T @ R_inv @ (innov + H_i @ x_i)  # (6,)
 
-                # N-scaling: scale local contribution by N so consensus average = sum
-                self._Y[i] = self._Y[i] + N * dY_i
-                self._y[i] = self._y[i] + N * dy_i
+                if self._metropolis:
+                    # Defer scaling — degree computed after dropout
+                    dY_raw[i] = dY_i
+                    dy_raw[i] = dy_i
+                else:
+                    # N-scaling: scale local contribution by N so consensus average = sum
+                    self._Y[i] = self._Y[i] + N * dY_i
+                    self._y[i] = self._y[i] + N * dy_i
 
         # --- Consensus iterations ---
         # Track which edges were active (union across all L iterations)
         adj_union = np.zeros_like(self._adj)
-        for _ in range(self._L):
+        for ell in range(self._L):
             # Apply dropout to get effective adjacency this iteration
             adj_eff = apply_dropout(self._adj, self._dropout, self._rng)
             adj_union = np.maximum(adj_union, adj_eff)
 
-            # Snapshot current values (consensus uses old values)
-            Y_old = [Yi.copy() for Yi in self._Y]
-            y_old = [yi.copy() for yi in self._y]
+            if self._metropolis:
+                # Compute per-node degree from effective adjacency
+                degrees = np.sum(adj_eff, axis=1).astype(int)  # d_i
 
-            for i in range(N):
-                for j in range(N):
-                    if adj_eff[i, j]:
-                        self._Y[i] = self._Y[i] + self._eps * (Y_old[j] - Y_old[i])
-                        self._y[i] = self._y[i] + self._eps * (y_old[j] - y_old[i])
+                # On first consensus iteration, apply degree-based measurement scaling
+                if ell == 0:
+                    for i in range(N):
+                        if dY_raw[i] is not None:
+                            scale = degrees[i] + 1  # d_i + 1
+                            self._Y[i] = self._Y[i] + scale * dY_raw[i]
+                            self._y[i] = self._y[i] + scale * dy_raw[i]
+
+                # Snapshot current values (consensus uses old values)
+                Y_old = [Yi.copy() for Yi in self._Y]
+                y_old = [yi.copy() for yi in self._y]
+
+                for i in range(N):
+                    d_i = degrees[i]
+                    for j in range(N):
+                        if adj_eff[i, j]:
+                            d_j = degrees[j]
+                            w_ij = 1.0 / (1.0 + max(d_i, d_j))
+                            self._Y[i] = self._Y[i] + w_ij * (Y_old[j] - Y_old[i])
+                            self._y[i] = self._y[i] + w_ij * (y_old[j] - y_old[i])
+            else:
+                # Snapshot current values (consensus uses old values)
+                Y_old = [Yi.copy() for Yi in self._Y]
+                y_old = [yi.copy() for yi in self._y]
+
+                for i in range(N):
+                    for j in range(N):
+                        if adj_eff[i, j]:
+                            self._Y[i] = self._Y[i] + self._eps * (Y_old[j] - Y_old[i])
+                            self._y[i] = self._y[i] + self._eps * (y_old[j] - y_old[i])
 
             # Symmetrize information matrices
             for i in range(N):

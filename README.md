@@ -4,7 +4,7 @@
 [![PyBullet](https://img.shields.io/badge/sim-PyBullet-orange.svg)](https://pybullet.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A research toolkit for **distributed Bayesian filtering** applied to cooperative drone-based target tracking. Five surveillance quadrotors estimate a maneuvering target's 3D state using bearing-only measurements, with configurable communication topologies, link dropout, and consensus protocols.
+A research toolkit for **distributed Bayesian filtering** applied to cooperative drone-based target tracking. N surveillance quadrotors estimate a maneuvering target's 3D state using bearing-only measurements, with configurable communication topologies, link dropout, and consensus protocols.
 
 Built on [gym-pybullet-drones](https://github.com/utiasDSL/gym-pybullet-drones) for realistic 3D physics simulation.
 
@@ -165,6 +165,12 @@ python scripts/run_consensus_imm.py --no-gui --only-consensus --steps 300
 
 # Pick specific filters
 python scripts/run_consensus_imm.py --no-gui --filters consensus-imm,pf --steps 300
+
+# Monte Carlo consensus: both EKF + IMM, custom dropout values
+python scripts/monte_carlo_consensus.py --filters both --dropout "0.0,0.2,0.5,0.8" --runs 100 --save
+
+# Monte Carlo consensus: override L and epsilon
+python scripts/monte_carlo_consensus.py --L 10 --eps 0.05 --filters both --runs 50
 ```
 
 ---

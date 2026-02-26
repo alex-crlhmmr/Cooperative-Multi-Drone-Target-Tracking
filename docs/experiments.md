@@ -196,31 +196,56 @@ python scripts/monte_carlo.py --runs 200 --workers 16
 
 ## monte_carlo_consensus.py
 
-**Purpose:** Monte Carlo sweep for consensus EKF across topologies, dropout levels, and trajectories.
+**Purpose:** Monte Carlo sweep for consensus filters (EKF and/or IMM) across topologies, dropout levels, and trajectories. Each trial runs the consensus filter(s) paired with centralized baselines on the same seed.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--runs` | int | from config (100) | Trials per combo |
 | `--topology` | str | all | Restrict to one topology: `full`, `ring`, `star` |
 | `--traj` | str | all | Restrict to one trajectory |
-| `--workers` | int | cpu_count - 1 | Parallel workers |
-| `--save` | flag | off | Save results |
+| `--workers` | int | cpu_count - 1 | Parallel worker processes |
+| `--filters` | str | `consensus-ekf` | Which consensus filter(s): `consensus-ekf`, `consensus-imm`, or `both` |
+| `--dropout` | str | from config | Comma-separated dropout probs (e.g. `"0.0,0.1,0.3,0.5"`) |
+| `--L` | int | from config (2) | Number of consensus iterations |
+| `--eps` | float | from config (0.1) | Consensus step size |
+| `--save` | flag | off | Save plots and `.npz` data |
 
-**Default sweep:** 3 topologies x 5 dropout levels x 2 trajectories = 30 combinations.
+**Default sweep:** 3 topologies x 5 dropout levels x 2 trajectories = 30 combinations, 100 trials each.
 
-**Outputs:** Dropout degradation curves (median + IQR shading per topology), topology box plots per trajectory.
+**Filter modes:**
+
+| `--filters` value | Consensus filters | Centralized baselines |
+|--------------------|-------------------|-----------------------|
+| `consensus-ekf` | ConsensusEKF | EKF |
+| `consensus-imm` | ConsensusIMM | EKF + IMM |
+| `both` | ConsensusEKF + ConsensusIMM | EKF + IMM |
+
+**Outputs:**
+- Summary table with centralized baselines + per-topology/dropout consensus rows
+- Dropout degradation curves (median + IQR shading per topology)
+- Topology box plots at dropout=0 (pure topology effect)
+- With `both`: separate plot sets for cekf and cimm
 
 **Examples:**
 
 ```bash
-# Full MC sweep
+# Default: consensus EKF only, all topologies/dropout from config
 python scripts/monte_carlo_consensus.py --runs 100 --save
 
-# Just star topology
-python scripts/monte_carlo_consensus.py --runs 50 --topology star
+# Both consensus EKF and IMM
+python scripts/monte_carlo_consensus.py --filters both --runs 100 --save
 
-# Just evasive trajectory
-python scripts/monte_carlo_consensus.py --runs 100 --traj evasive --save
+# Consensus IMM only, custom dropout values
+python scripts/monte_carlo_consensus.py --filters consensus-imm --dropout "0.0,0.2,0.5,0.8" --runs 50
+
+# Override consensus iterations and step size
+python scripts/monte_carlo_consensus.py --L 10 --eps 0.05 --runs 50
+
+# Just star topology, evasive trajectory
+python scripts/monte_carlo_consensus.py --topology star --traj evasive --runs 100
+
+# Full sweep with both filters, more iterations
+python scripts/monte_carlo_consensus.py --filters both --L 5 --runs 200 --save
 ```
 
 ---

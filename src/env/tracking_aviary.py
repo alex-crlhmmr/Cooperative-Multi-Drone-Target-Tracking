@@ -173,6 +173,7 @@ class TrackingAviary(CtrlAviary):
         tracker_targets: np.ndarray | None = None,
         tracker_target_vels: np.ndarray | None = None,
         target_estimate: np.ndarray | None = None,
+        per_drone_estimates: np.ndarray | None = None,
     ) -> dict:
         """High-level step: move drones via PID, get bearing measurements.
 
@@ -183,6 +184,8 @@ class TrackingAviary(CtrlAviary):
                 If None, zero velocity (position-only control).
             target_estimate: (3,) filter's estimate of target position (for gimbal).
                 If None, uses true target physical position (perfect gimbal).
+            per_drone_estimates: (num_trackers, 3) per-drone gimbal targets.
+                If provided, overrides target_estimate per drone (for local gimbal mode).
 
         Returns:
             Dictionary with step results.
@@ -240,14 +243,19 @@ class TrackingAviary(CtrlAviary):
         target_true_pos = self._getDroneStateVector(self.num_trackers)[:3]
 
         # Take bearing measurements
-        # Gimbal: use provided estimate, or actual physical target position
-        gimbal_target = target_estimate if target_estimate is not None else target_true_pos
+        # Gimbal: per-drone estimates > single estimate > true position (perfect)
         measurements = []
         for i in range(self.num_trackers):
+            if per_drone_estimates is not None:
+                gimbal_i = per_drone_estimates[i]
+            elif target_estimate is not None:
+                gimbal_i = target_estimate
+            else:
+                gimbal_i = target_true_pos
             m = self.sensor.measure(
                 drone_pos=drone_positions[i],
                 target_true_pos=target_true_pos,
-                target_estimated_pos=gimbal_target,
+                target_estimated_pos=gimbal_i,
             )
             measurements.append(m)
 

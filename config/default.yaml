@@ -12,7 +12,7 @@ sim:
   physics: "pyb_gnd_drag_dw"  # most realistic mode
 
 drones:
-  num_trackers: 4
+  num_trackers: 5
   model: "surveillance"           # surveillance (4kg quad) or cf2x (27g Crazyflie)
   # Tracker spawning: random positions in a hollow sphere around target
   tracker_min_radius: 100.0   # inner radius of spawn sphere (meters)
@@ -36,7 +36,7 @@ target:
 
 sensor:
   mode: "geometric"            # or "camera"
-  fov_half_deg: 30
+  fov_half_deg: 15
   sigma_bearing_deg: 2.0
   max_range: 300.0
   range_ref: 100.0             # reference range for noise scaling
@@ -63,7 +63,7 @@ filters:
     jitter_vel: 0.5            # direct velocity jitter std (m/s) per step
 
 consensus:
-  num_iterations: 5
+  num_iterations: 2
   step_size: 0.1               # epsilon
   topologies: ["full", "ring", "star"]
   dropout_probs: [0.0, 0.1, 0.2, 0.3, 0.5]

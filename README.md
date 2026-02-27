@@ -209,4 +209,16 @@ Classic consensus requires knowing N (total swarm size). MH weights replace this
 
 ## Citation
 
-This project was developed for **AA 273: State Estimation and Filtering** at Stanford University (Winter 2026).
+If you use this code in your research, please cite:
+
+```bibtex
+@software{carlhammar2026cooperative,
+  author       = {Carlhammar, Alexandre},
+  title        = {Cooperative Multi-Drone Target Tracking with Distributed Bayesian Filtering},
+  year         = {2026},
+  url          = {https://github.com/alex-crlhmmr/Cooperative-Multi-Drone-Target-Tracking},
+  note         = {AA 273: State Estimation and Filtering, Stanford University}
+}
+```
+
+**Contact:** Alexandre Carlhammar — [acarlham@stanford.edu](mailto:acarlham@stanford.edu)

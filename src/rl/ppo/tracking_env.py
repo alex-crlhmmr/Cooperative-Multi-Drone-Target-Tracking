@@ -54,6 +54,15 @@ class MultiDroneTrackingEnv(gym.Env):
         self._adj = None
         self._step_count = 0
 
+        # Spawn mode: "normal" = hollow sphere, "mixed" = random mix of cluster + normal
+        self.spawn_mode = "normal"
+
+        # Early termination: if tr(P) > threshold for patience steps after grace period
+        self._early_term_grace = 1000     # no termination for first N steps
+        self._early_term_threshold = 10000.0
+        self._early_term_patience = 200
+        self._early_term_counter = 0
+
     def reset(self, seed=None, options=None):
         if seed is not None:
             self._seed = seed
@@ -63,11 +72,33 @@ class MultiDroneTrackingEnv(gym.Env):
         if self._aviary is not None:
             self._aviary.close()
 
+        # Compute tracker spawn positions
+        target_pos = np.array([0.0, 0.0, 50.0])
+        if self.spawn_mode in ("mixed", "cluster"):
+            # mixed: 50% cluster, 50% normal. cluster: always cluster.
+            do_cluster = (self.spawn_mode == "cluster") or (self._rng.random() < 0.5)
+            if do_cluster:
+                # Cluster: all drones near one point, random radius 5-30m
+                r = self._rng.uniform(5.0, 30.0)
+                direction = self._rng.standard_normal(3)
+                direction[2] = abs(direction[2])  # bias upward
+                direction /= np.linalg.norm(direction) + 1e-8
+                cluster_center = target_pos + direction * 100.0
+                cluster_center[2] = max(cluster_center[2], self.cfg.min_altitude + 10.0)
+                tracker_positions = np.array([
+                    cluster_center + self._rng.uniform(-r, r, size=3) for _ in range(self.N)
+                ])
+                tracker_positions[:, 2] = np.maximum(tracker_positions[:, 2], self.cfg.min_altitude)
+            else:
+                tracker_positions = None  # normal hollow sphere (50-75m)
+        else:
+            tracker_positions = None  # default hollow sphere
+
         # Create aviary
         self._aviary = TrackingAviary(
             num_trackers=self.N,
-            tracker_positions=None,  # random spawn
-            target_initial_pos=np.array([0.0, 0.0, 50.0]),
+            tracker_positions=tracker_positions,
+            target_initial_pos=target_pos,
             target_speed=self.cfg.target_speed,
             target_trajectory=self.cfg.target_trajectory,
             target_sigma_a=self.cfg.target_sigma_a,
@@ -100,6 +131,7 @@ class MultiDroneTrackingEnv(gym.Env):
 
         self._step_count = 0
         self._last_result = None
+        self._early_term_counter = 0
 
         # Take one initial step with zero velocity to get first measurements
         obs, info = self._initial_step()
@@ -210,6 +242,16 @@ class MultiDroneTrackingEnv(gym.Env):
         self._step_count += 1
         terminated = result.get("done", False)
         truncated = False
+
+        # Early termination: if tr(P) stays above threshold after grace period
+        if not terminated and self._step_count > self._early_term_grace:
+            tr_P = self._get_tr_P_pos()
+            if tr_P > self._early_term_threshold:
+                self._early_term_counter += 1
+                if self._early_term_counter >= self._early_term_patience:
+                    truncated = True
+            else:
+                self._early_term_counter = 0
 
         info = {
             "result": result,

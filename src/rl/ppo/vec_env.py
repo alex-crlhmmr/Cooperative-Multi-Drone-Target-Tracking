@@ -50,6 +50,11 @@ def _worker(pipe, env_fn: Callable):
             pipe.close()
             break
 
+        elif cmd == "set_attr":
+            attr_name, attr_value = data
+            setattr(env, attr_name, attr_value)
+            pipe.send(True)
+
         elif cmd == "get_spaces":
             pipe.send((env.observation_space, env.action_space))
 
@@ -132,6 +137,13 @@ class SubprocVecEnv:
         infos = [r[3] for r in results]
 
         return obs, rewards, dones, infos
+
+    def set_attr(self, attr_name: str, value):
+        """Set an attribute on all worker environments."""
+        for pipe in self._parent_pipes:
+            pipe.send(("set_attr", (attr_name, value)))
+        for pipe in self._parent_pipes:
+            pipe.recv()
 
     def close(self):
         if self.closed:

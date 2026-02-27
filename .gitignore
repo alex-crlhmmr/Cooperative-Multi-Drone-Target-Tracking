@@ -5,6 +5,10 @@ results/
 output/
 runs/
 
+# Paper / reports
+milestone/
+icml2018_style/
+
 # Python
 __pycache__/
 *.pyc

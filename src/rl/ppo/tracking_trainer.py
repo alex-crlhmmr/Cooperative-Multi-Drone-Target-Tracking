@@ -78,6 +78,7 @@ class TrackingTrainer:
         writer: SummaryWriter | None = None,
         obs_normalizer: RunningMeanStd | None = None,
         start_step: int = 0,
+        spawn_mode: str = "mixed",
     ):
         self.vec_env = vec_env
         self.agent = agent
@@ -87,6 +88,7 @@ class TrackingTrainer:
         self.writer = writer
         self.obs_normalizer = obs_normalizer
         self.start_step = start_step
+        self.spawn_mode = spawn_mode
 
         self.E = cfg.num_envs
         self.N = cfg.num_drones
@@ -112,6 +114,8 @@ class TrackingTrainer:
         """Main training loop."""
         total_steps = self.start_step
         num_rollouts = 0
+
+        self.vec_env.set_attr("spawn_mode", self.spawn_mode)
 
         obs = self.vec_env.reset()  # (E, N, obs_dim)
 
@@ -256,6 +260,9 @@ class TrackingTrainer:
                       f"tr(P)={eval_result['tr_P']:.1f}  "
                       f"RMSE={eval_result['rmse']:.2f}")
 
+                # Write results to CSV for easy monitoring
+                self._append_eval_csv(total_steps, eval_result)
+
             if num_rollouts % 5 == 0:
                 elapsed = time.time() - t_start
                 sps = total_steps / elapsed if elapsed > 0 else 0
@@ -371,6 +378,15 @@ class TrackingTrainer:
             "tr_P": np.nanmean(tr_Ps),
             "rmse": np.nanmean(rmses),
         }
+
+    def _append_eval_csv(self, step: int, result: dict):
+        """Append eval result to a CSV file in the save directory."""
+        csv_path = os.path.join(self.cfg.save_path, "eval_results.csv")
+        write_header = not os.path.exists(csv_path)
+        with open(csv_path, "a") as f:
+            if write_header:
+                f.write("step,reward,tr_P,rmse\n")
+            f.write(f"{step},{result['reward']:.4f},{result['tr_P']:.4f},{result['rmse']:.4f}\n")
 
     def _save_checkpoint(self, step: int, final: bool = False):
         os.makedirs(self.cfg.save_path, exist_ok=True)

@@ -133,6 +133,12 @@ def main():
     parser.add_argument("--save-path", type=str, default=None)
     parser.add_argument("--no-plot", action="store_true", help="Skip end-of-training plots")
     parser.add_argument("--resume", type=str, default=None, help="Resume from checkpoint .pt")
+    parser.add_argument("--episode-length", type=int, default=None)
+    parser.add_argument("--spawn-mode", type=str, default=None, choices=["normal", "mixed", "cluster"])
+    parser.add_argument("--w-cov", type=float, default=None)
+    parser.add_argument("--w-dist", type=float, default=None)
+    parser.add_argument("--w-sep", type=float, default=None)
+    parser.add_argument("--w-detect", type=float, default=None)
     args = parser.parse_args()
 
     # Build config — from checkpoint if resuming, else fresh defaults
@@ -162,6 +168,16 @@ def main():
         cfg.num_drones = args.num_drones
     if args.save_path is not None:
         cfg.save_path = args.save_path
+    if args.episode_length is not None:
+        cfg.episode_length = args.episode_length
+    if args.w_cov is not None:
+        cfg.w_cov = args.w_cov
+    if args.w_dist is not None:
+        cfg.w_dist = args.w_dist
+    if args.w_sep is not None:
+        cfg.w_separation = args.w_sep
+    if args.w_detect is not None:
+        cfg.w_detection = args.w_detect
 
     # Seeds
     random.seed(cfg.seed)
@@ -243,6 +259,7 @@ def main():
     writer = SummaryWriter(f"runs/{run_name}")
 
     # Trainer
+    spawn_mode = args.spawn_mode or "mixed"
     trainer = TrackingTrainer(
         vec_env=vec_env,
         agent=agent,
@@ -252,6 +269,7 @@ def main():
         writer=writer,
         obs_normalizer=obs_normalizer,
         start_step=resume_step,
+        spawn_mode=spawn_mode,
     )
 
     # Restore training history if resuming
@@ -291,6 +309,7 @@ def main():
     print(f"  w_dist:         {cfg.w_dist}")
     print(f"  dist_scale:     {cfg.dist_scale} m")
     print(f"  w_detection:    {cfg.w_detection}")
+    print(f"  w_separation:   {cfg.w_separation}")
     print(f"  cov_scale:      {cfg.cov_scale}")
     print()
     print(f"  --- PPO ---")

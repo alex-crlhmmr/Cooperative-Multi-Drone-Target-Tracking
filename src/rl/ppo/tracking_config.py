@@ -8,7 +8,7 @@ import numpy as np
 class TrackingConfig:
     # --- Environment ---
     num_drones: int = 5
-    episode_length: int = 3000
+    episode_length: int = 5000
     ctrl_freq: int = 48
     pyb_freq: int = 240
     v_max: float = 15.0

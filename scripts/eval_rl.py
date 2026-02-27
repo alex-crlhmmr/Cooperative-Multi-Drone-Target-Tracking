@@ -8,6 +8,8 @@ Usage:
     python -m scripts.eval_rl --checkpoint output/rl_tracking/checkpoint_final.pt
     python -m scripts.eval_rl --checkpoint output/rl_tracking/checkpoint_final.pt --compare-baseline
     python -m scripts.eval_rl --checkpoint output/rl_tracking/checkpoint_final.pt --episodes 20 --save results/eval
+    python -m scripts.eval_rl --checkpoint output/rl_tracking/checkpoint_final.pt --replay --steps 1000
+    python -m scripts.eval_rl --checkpoint output/rl_tracking/checkpoint_final.pt --cluster-spawn --steps 5000
 """
 
 import argparse
@@ -59,8 +61,12 @@ def load_checkpoint(path: str, device: torch.device):
 
 
 def eval_episode(env: MultiDroneTrackingEnv, actor: TrackingActor,
-                 obs_normalizer, device: torch.device, cfg: TrackingConfig):
-    """Run one eval episode with deterministic policy. Returns per-step metrics."""
+                 obs_normalizer, device: torch.device, cfg: TrackingConfig,
+                 record_trajectory: bool = False):
+    """Run one eval episode with deterministic policy. Returns per-step metrics.
+
+    If record_trajectory=True, also records full data for replay animation.
+    """
     obs, _ = env.reset()
     N = cfg.num_drones
 
@@ -68,6 +74,15 @@ def eval_episode(env: MultiDroneTrackingEnv, actor: TrackingActor,
     rmse_steps = []
     reward_steps = []
     detection_steps = []
+
+    # Trajectory recording for replay
+    if record_trajectory:
+        all_drone_pos = []
+        all_target_states = []
+        all_consensus_est = []
+        all_local_est = []  # will be (T, N, 6)
+        all_measurements = []
+        all_active_edges = []
 
     for step in range(cfg.episode_length):
         if obs_normalizer is not None:
@@ -93,16 +108,50 @@ def eval_episode(env: MultiDroneTrackingEnv, actor: TrackingActor,
             n_det = sum(1 for m in info["result"]["measurements"] if m is not None)
             detection_steps.append(n_det)
 
+        # Record trajectory data
+        if record_trajectory and "result" in info:
+            result = info["result"]
+            all_drone_pos.append(result["drone_positions"].copy())
+            all_target_states.append(result["target_true_state"].copy())
+            all_measurements.append(
+                [m for m in result["measurements"]]
+            )
+            if env._filter.initialized:
+                all_consensus_est.append(env._filter.get_estimate().copy())
+                local_step = []
+                for i in range(N):
+                    local_step.append(env._filter.get_local_estimate(i).copy())
+                all_local_est.append(np.array(local_step))
+                all_active_edges.append(env._filter.get_active_edges())
+            else:
+                all_consensus_est.append(np.zeros(6))
+                all_local_est.append(np.zeros((N, 6)))
+                all_active_edges.append(np.zeros((N, N)))
+
         if terminated or truncated:
             break
 
-    return {
+    result_dict = {
         "reward": sum(reward_steps),
         "tr_P": np.array(tr_P_steps),
         "rmse": np.array(rmse_steps),
         "detections": np.array(detection_steps),
         "reward_steps": np.array(reward_steps),
     }
+
+    if record_trajectory:
+        T = len(all_drone_pos)
+        result_dict["trajectory"] = {
+            "drone_positions": np.array(all_drone_pos),           # (T, N, 3)
+            "target_true_states": np.array(all_target_states),    # (T, 6)
+            "consensus_est": np.array(all_consensus_est),         # (T, 6)
+            "local_estimates": np.array(all_local_est).transpose(1, 0, 2),  # (N, T, 6)
+            "measurements": all_measurements,                     # list of T
+            "active_edges": all_active_edges,                     # list of T
+            "adjacency": env._adj.copy(),
+        }
+
+    return result_dict
 
 
 def plot_comparison(rl_results: list, baseline_results: list | None, save_dir: str, N: int):
@@ -222,6 +271,10 @@ def main():
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--save", type=str, default=None, help="Directory to save plots")
     parser.add_argument("--steps", type=int, default=None, help="Override episode length for eval")
+    parser.add_argument("--replay", action="store_true",
+                        help="Run single episode and show interactive replay animation")
+    parser.add_argument("--cluster-spawn", action="store_true",
+                        help="Spawn all drones at nearly the same point (test spreading)")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -236,12 +289,53 @@ def main():
     print(f"Loaded checkpoint: {args.checkpoint}")
     print(f"  Training step: {training_step}")
     print(f"  Drones: {cfg.num_drones}, Trajectory: {cfg.target_trajectory}")
+    if args.cluster_spawn:
+        print(f"  CLUSTER SPAWN: all drones start at nearly same point")
     print()
 
-    # Run RL evaluation
+    # --- Replay mode: single episode with animation ---
+    if args.replay:
+        env = MultiDroneTrackingEnv(cfg, seed=args.seed)
+
+        # Override spawn positions if cluster-spawn
+        if args.cluster_spawn:
+            _override_cluster_spawn(env, cfg)
+
+        result = eval_episode(env, actor, obs_normalizer, device, cfg,
+                              record_trajectory=True)
+        env.close()
+
+        mean_tr_P = np.nanmean(result["tr_P"]) if len(result["tr_P"]) > 0 else np.nan
+        mean_rmse = np.nanmean(result["rmse"]) if len(result["rmse"]) > 0 else np.nan
+        print(f"  Episode: reward={result['reward']:.2f}  "
+              f"tr(P)={mean_tr_P:.1f}  RMSE={mean_rmse:.2f}")
+
+        traj = result["trajectory"]
+        from src.viz.animation import animate_rl_tracking
+        animate_rl_tracking(
+            drone_positions=traj["drone_positions"],
+            target_true_states=traj["target_true_states"],
+            consensus_est=traj["consensus_est"],
+            local_estimates=traj["local_estimates"],
+            adjacency=traj["adjacency"],
+            tr_P_history=result["tr_P"],
+            measurements=traj["measurements"],
+            active_edges=traj["active_edges"],
+            dt=cfg.dt,
+            title=f"RL Policy Replay ({cfg.episode_length} steps, "
+                  f"{cfg.target_trajectory})"
+                  + (" [cluster spawn]" if args.cluster_spawn else ""),
+            topology_name=cfg.topology,
+            controller_label="RL Policy",
+        )
+        return
+
+    # --- Standard eval mode ---
     rl_results = []
     for ep in range(args.episodes):
         env = MultiDroneTrackingEnv(cfg, seed=args.seed + ep)
+        if args.cluster_spawn:
+            _override_cluster_spawn(env, cfg)
         result = eval_episode(env, actor, obs_normalizer, device, cfg)
         env.close()
         rl_results.append(result)
@@ -309,6 +403,45 @@ def main():
     # Plots
     save_dir = args.save or os.path.dirname(args.checkpoint) or "."
     plot_comparison(rl_results, baseline_results, save_dir, cfg.num_drones)
+
+
+def _override_cluster_spawn(env: MultiDroneTrackingEnv, cfg: TrackingConfig):
+    """Override env reset to spawn all drones at nearly the same point.
+
+    Patches the env so that on reset(), drones start within 2m of each other
+    near the target initial position, testing whether they learn to spread.
+    """
+    original_reset = env.reset
+
+    def cluster_reset(seed=None, options=None):
+        # Call original reset to set up aviary + filter
+        obs, info = original_reset(seed=seed, options=options)
+
+        # Get target position and create clustered spawn
+        target_pos = np.array([0.0, 0.0, 50.0])
+        offset = np.array([100.0, 0.0, 0.0])  # start 100m away from target
+        cluster_center = target_pos + offset
+
+        # Move all drones to cluster (within 2m of each other)
+        rng = np.random.default_rng(seed or cfg.seed)
+        for i in range(cfg.num_drones):
+            jitter = rng.uniform(-1.0, 1.0, size=3)
+            new_pos = cluster_center + jitter
+            new_pos[2] = max(new_pos[2], cfg.min_altitude)
+            # Set drone position in pybullet
+            import pybullet as p
+            p.resetBasePositionAndOrientation(
+                env._aviary.DRONE_IDS[i],
+                new_pos,
+                [0, 0, 0, 1],
+                physicsClientId=env._aviary.CLIENT,
+            )
+
+        # Re-run initial step with new positions
+        obs, info = env._initial_step()
+        return obs, info
+
+    env.reset = cluster_reset
 
 
 if __name__ == "__main__":

@@ -154,14 +154,14 @@ class MultiDroneTrackingEnv(gym.Env):
                 dist = np.linalg.norm(dir_to_est)
                 if dist > 1e-3:
                     # Chase at target's estimated speed + close the gap
-                    base_velocity[i] = (dir_to_est / dist) * min(dist * 0.5, self.cfg.v_max * 0.7)
+                    base_velocity[i] = (dir_to_est / dist) * min(dist * 0.5, self.cfg.v_max * 0.5)
                     base_velocity[i] += local_est[3:6]  # feedforward target velocity
                     speed = np.linalg.norm(base_velocity[i])
-                    if speed > self.cfg.v_max * 0.7:
-                        base_velocity[i] *= self.cfg.v_max * 0.7 / speed
+                    if speed > self.cfg.v_max * 0.5:
+                        base_velocity[i] *= self.cfg.v_max * 0.5 / speed
 
-        # RL correction: scales up to 30% of v_max
-        correction = action * self.cfg.v_max * 0.3
+        # RL correction: scales up to 50% of v_max
+        correction = action * self.cfg.v_max * 0.5
         velocity = base_velocity + correction
 
         # Clamp total velocity
@@ -277,9 +277,10 @@ class MultiDroneTrackingEnv(gym.Env):
         """Compute per-drone reward.
 
         Components:
-        - Covariance: -w_cov * tr(P_pos) / cov_scale  (shared, minimize filter uncertainty)
-        - Distance:   -w_dist * dist / dist_scale  (per-drone, smooth gradient to follow target)
-        - Detection:  +w_detection * detected  (per-drone, reward for seeing target)
+        - Covariance:  -w_cov * tr(P_pos) / cov_scale  (shared, minimize filter uncertainty)
+        - Distance:    -w_dist * dist / dist_scale  (per-drone, smooth gradient to follow target)
+        - Detection:   +w_detection * detected  (per-drone, reward for seeing target)
+        - Separation:  +w_separation * min_angle / 90°  (per-drone, angular diversity)
 
         Returns: (N,) float32 array.
         """
@@ -295,6 +296,14 @@ class MultiDroneTrackingEnv(gym.Env):
 
         drone_positions = result["drone_positions"]
 
+        # Precompute unit vectors from target estimate to each drone for angular separation
+        consensus_est = self._filter.get_estimate()[:3]
+        unit_vecs = []
+        for i in range(self.N):
+            d = drone_positions[i] - consensus_est
+            norm = np.linalg.norm(d)
+            unit_vecs.append(d / norm if norm > 1e-3 else np.zeros(3))
+
         for i in range(self.N):
             local_est = self._filter.get_local_estimate(i)[:3]
             dist = np.linalg.norm(drone_positions[i] - local_est)
@@ -305,9 +314,19 @@ class MultiDroneTrackingEnv(gym.Env):
             # Detection bonus — rewards maintaining visual contact
             detected = 1.0 if result["measurements"][i] is not None else 0.0
 
+            # Angular separation: min angle to any other drone (w.r.t. target estimate)
+            min_angle = 180.0
+            for j in range(self.N):
+                if j != i:
+                    cos_a = np.clip(np.dot(unit_vecs[i], unit_vecs[j]), -1.0, 1.0)
+                    angle = np.degrees(np.arccos(cos_a))
+                    min_angle = min(min_angle, angle)
+            sep_bonus = self.cfg.w_separation * min_angle / 90.0
+
             reward[i] = (cov_reward
                          + dist_penalty
-                         + self.cfg.w_detection * detected)
+                         + self.cfg.w_detection * detected
+                         + sep_bonus)
 
         return reward
 

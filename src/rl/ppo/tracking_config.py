@@ -8,7 +8,7 @@ import numpy as np
 class TrackingConfig:
     # --- Environment ---
     num_drones: int = 5
-    episode_length: int = 1000
+    episode_length: int = 3000
     ctrl_freq: int = 48
     pyb_freq: int = 240
     v_max: float = 15.0
@@ -40,6 +40,7 @@ class TrackingConfig:
     w_dist: float = 0.5         # continuous distance penalty to encourage following
     dist_scale: float = 100.0   # normalize distance: reward = -w_dist * dist / dist_scale
     w_detection: float = 0.1    # bonus per drone that detects target
+    w_separation: float = 0.3   # angular separation bonus (per-drone)
     cov_scale: float = 1000.0
 
     # --- PPO ---
@@ -51,7 +52,7 @@ class TrackingConfig:
     max_grad_norm: float = 0.5
     gamma: float = 0.95
     gae_lambda: float = 0.95
-    rollout_steps: int = 1000
+    rollout_steps: int = 1500
     mini_batch_size: int = 2048
 
     # --- Network ---

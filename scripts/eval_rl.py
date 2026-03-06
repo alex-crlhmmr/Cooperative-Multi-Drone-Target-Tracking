@@ -93,7 +93,7 @@ def eval_episode(env: MultiDroneTrackingEnv, actor: TrackingActor,
         obs_t = torch.tensor(obs_norm.reshape(N, -1), dtype=torch.float32, device=device)
         with torch.no_grad():
             dist = actor.forward(obs_t)
-            action = torch.tanh(dist.mean)
+            action = torch.clamp(dist.mean, -1.0, 1.0)
 
         obs, reward, terminated, truncated, info = env.step(action.cpu().numpy())
 

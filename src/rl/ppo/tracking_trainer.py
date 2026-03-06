@@ -353,7 +353,7 @@ class TrackingTrainer:
                 )
                 with torch.no_grad():
                     dist = self.agent.actor.forward(obs_t)
-                    action = torch.tanh(dist.mean)
+                    action = torch.clamp(dist.mean, -1.0, 1.0)
 
                 obs, reward, terminated, truncated, info = env.step(action.cpu().numpy())
                 ep_reward += reward.mean()

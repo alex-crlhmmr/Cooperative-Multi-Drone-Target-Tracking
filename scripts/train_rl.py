@@ -191,7 +191,7 @@ def main():
     vec_env = SubprocVecEnv(env_fns)
 
     N = cfg.num_drones
-    obs_dim = 31  # matches MultiDroneTrackingEnv
+    obs_dim = 32  # matches MultiDroneTrackingEnv
     action_dim = 3
 
     # Create networks

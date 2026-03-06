@@ -43,15 +43,15 @@ class NeighborEncoder(nn.Module):
 
 
 class TrackingActor(BaseActor):
-    """Actor for multi-drone tracking with tanh-squashed Gaussian policy.
+    """Actor for multi-drone tracking with clipped Gaussian policy.
 
-    Observation layout (31D per drone):
+    Observation layout (32D per drone):
         [0:19]  ego features (rel_pos, vel_est, eigenvals, eigvecs, detect_flag)
-        [19:31] neighbor features (mean, max, min, std of relative positions)
+        [19:32] neighbor features (mean, max, min, std of relative positions) + angular rank
     """
 
     EGO_DIM = 19
-    NEIGHBOR_DIM = 12  # 4 stats x 3D
+    NEIGHBOR_DIM = 13  # 4 stats x 3D + angular rank
 
     def __init__(
         self,
@@ -86,8 +86,8 @@ class TrackingActor(BaseActor):
                 if last_layer.bias is not None:
                     last_layer.bias.mul_(5.0)
 
-        # State-independent log_std (init -0.5 → std≈0.6 for moderate exploration)
-        self.log_std = nn.Parameter(torch.full((action_dim,), -0.5, device=device))
+        # State-independent log_std (init 0.0 → std=1.0 for strong exploration)
+        self.log_std = nn.Parameter(torch.full((action_dim,), 0.0, device=device))
 
     def _encode(self, obs: torch.Tensor) -> torch.Tensor:
         """Encode observation into feature vector.
@@ -113,27 +113,21 @@ class TrackingActor(BaseActor):
         features = self._encode(obs)
         mean = self.policy_net(features)
         # Clamp log_std to prevent entropy explosion or collapse
-        log_std = torch.clamp(self.log_std, -3.0, 0.5)
+        log_std = torch.clamp(self.log_std, -1.0, 0.5)
         std = torch.exp(log_std)
         return Normal(mean, std)
 
     def act(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Sample action with tanh squashing and corrected log_prob.
+        """Sample action with clipping (no Jacobian correction needed).
 
         Returns:
             action: (batch, action_dim) in [-1, 1]
-            log_prob: (batch,) corrected for tanh Jacobian
+            log_prob: (batch,)
         """
         dist = self.forward(obs)
         raw = dist.rsample()
-
-        # Tanh squashing
-        action = torch.tanh(raw)
-
-        # Log prob with Jacobian correction: log_prob -= sum(log(1 - tanh^2(raw)))
+        action = torch.clamp(raw, -1.0, 1.0)
         log_prob = dist.log_prob(raw).sum(dim=-1)
-        log_prob -= torch.log(1 - action.pow(2) + 1e-6).sum(dim=-1)
-
         return action, log_prob
 
     def evaluate(self, obs: torch.Tensor, actions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -141,25 +135,15 @@ class TrackingActor(BaseActor):
 
         Args:
             obs: (batch, obs_dim)
-            actions: (batch, action_dim) squashed actions in [-1, 1]
+            actions: (batch, action_dim) clipped actions in [-1, 1]
 
         Returns:
             log_probs: (batch,)
             entropy: (batch,)
         """
         dist = self.forward(obs)
-
-        # Inverse squashing: raw = atanh(action)
-        clamped = torch.clamp(actions, -0.999, 0.999)
-        raw = torch.atanh(clamped)
-
-        # Log prob with Jacobian correction
-        log_prob = dist.log_prob(raw).sum(dim=-1)
-        log_prob -= torch.log(1 - actions.pow(2) + 1e-6).sum(dim=-1)
-
-        # Entropy of the squashed distribution (approximate using base entropy)
+        log_prob = dist.log_prob(actions).sum(dim=-1)
         entropy = dist.entropy().sum(dim=-1)
-
         return log_prob, entropy
 
 
@@ -170,7 +154,7 @@ class TrackingCritic(nn.Module):
     """
 
     EGO_DIM = 19
-    NEIGHBOR_DIM = 12
+    NEIGHBOR_DIM = 13
 
     def __init__(
         self,

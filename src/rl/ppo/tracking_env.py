@@ -18,16 +18,17 @@ from .tracking_config import TrackingConfig
 class MultiDroneTrackingEnv(gym.Env):
     """Multi-agent tracking environment.
 
-    Observation per drone (31D):
+    Observation per drone (32D):
         [0:3]   relative position to local estimate (egocentric)
         [3:6]   velocity estimate from local filter
         [6:9]   eigenvalues of position covariance (3)
         [9:18]  eigenvectors of position covariance (9 = 3x3 flattened)
         [18]    detection flag (0 or 1)
         [19:31] neighbor features: mean(3) + max(3) + min(3) + std(3) of relative positions
+        [31]    angular rank (0.0 to 1.0) — symmetry-breaking scalar
 
-    Action per drone (3D): raw values in [-1, 1], squashed via tanh * v_max.
-    Reward per drone: -w_cov * tr(P_pos) / scale - w_dist * dist / dist_scale + w_detection * detected
+    Action per drone (3D): raw values in [-1, 1], scaled to velocity commands.
+    Reward per drone: -w_cov * log1p(tr(P_pos)) / log1p(scale) - w_dist * dist / dist_scale + w_detection * detected
     """
 
     def __init__(self, cfg: TrackingConfig, seed: int | None = None):
@@ -38,7 +39,7 @@ class MultiDroneTrackingEnv(gym.Env):
         self._rng = np.random.default_rng(self._seed)
 
         # Observation and action spaces
-        self.obs_dim = 31
+        self.obs_dim = 32
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf,
             shape=(self.N, self.obs_dim), dtype=np.float32,
@@ -78,8 +79,8 @@ class MultiDroneTrackingEnv(gym.Env):
             # mixed: 50% cluster, 50% normal. cluster: always cluster.
             do_cluster = (self.spawn_mode == "cluster") or (self._rng.random() < 0.5)
             if do_cluster:
-                # Cluster: all drones near one point, random radius 5-30m
-                r = self._rng.uniform(5.0, 30.0)
+                # Cluster: all drones near one point, ±10m spread
+                r = 10.0
                 direction = self._rng.standard_normal(3)
                 direction[2] = abs(direction[2])  # bias upward
                 direction /= np.linalg.norm(direction) + 1e-8
@@ -313,6 +314,28 @@ class MultiDroneTrackingEnv(gym.Env):
                 obs[i, 25:28] = np.min(neighbor_arr, axis=0)    # min
                 obs[i, 28:31] = np.std(neighbor_arr, axis=0)    # std
 
+        # Angular rank for symmetry breaking (obs index 31)
+        consensus_est = self._filter.get_estimate()[:3]
+        centroid = drone_positions.mean(axis=0)
+        ref_dir = consensus_est - centroid
+        ref_dir /= np.linalg.norm(ref_dir) + 1e-8
+        # Build perpendicular basis for angle computation
+        perp1 = np.cross(ref_dir, [0, 0, 1])
+        if np.linalg.norm(perp1) < 1e-6:
+            perp1 = np.cross(ref_dir, [0, 1, 0])
+        perp1 /= np.linalg.norm(perp1)
+        perp2 = np.cross(ref_dir, perp1)
+        angles = []
+        for i in range(self.N):
+            d = drone_positions[i] - centroid
+            angles.append(np.arctan2(np.dot(d, perp2), np.dot(d, perp1)))
+        rank_order = np.argsort(angles)
+        ranks = np.zeros(self.N)
+        for order_idx, drone_idx in enumerate(rank_order):
+            ranks[drone_idx] = order_idx / max(self.N - 1, 1)
+        for i in range(self.N):
+            obs[i, 31] = ranks[i]
+
         return obs
 
     def _compute_reward(self, result: dict) -> np.ndarray:
@@ -334,7 +357,7 @@ class MultiDroneTrackingEnv(gym.Env):
 
         # Shared covariance-based reward (same for all drones)
         tr_P_pos = self._get_tr_P_pos()
-        cov_reward = -self.cfg.w_cov * tr_P_pos / self.cfg.cov_scale
+        cov_reward = -self.cfg.w_cov * np.log1p(tr_P_pos) / np.log1p(self.cfg.cov_scale)
 
         drone_positions = result["drone_positions"]
 

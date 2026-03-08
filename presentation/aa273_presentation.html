@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cooperative Multi-Drone Target Tracking — AA273</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/reveal.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/theme/white.min.css">
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --r-heading-font: 'Inter', sans-serif;
+    --r-main-font: 'Inter', sans-serif;
+    --r-code-font: 'JetBrains Mono', monospace;
+    --accent: #2563eb;
+    --accent-light: #3b82f6;
+    --accent-bg: #eff6ff;
+    --dark: #1e293b;
+    --gray: #64748b;
+    --green: #059669;
+    --red: #dc2626;
+    --orange: #d97706;
+  }
+
+  .reveal {
+    font-size: 28px;
+    color: var(--dark);
+  }
+
+  .reveal h1 {
+    font-size: 2.2em;
+    font-weight: 700;
+    color: var(--dark);
+    margin-bottom: 0.3em;
+    letter-spacing: -0.02em;
+  }
+
+  .reveal h2 {
+    font-size: 1.6em;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 0.4em;
+    letter-spacing: -0.01em;
+  }
+
+  .reveal h3 {
+    font-size: 1.2em;
+    font-weight: 600;
+    color: var(--dark);
+    margin-bottom: 0.3em;
+  }
+
+  .reveal p, .reveal li {
+    font-size: 0.85em;
+    line-height: 1.6;
+    color: #334155;
+  }
+
+  .reveal ul { list-style: none; padding-left: 0; }
+  .reveal ul li::before {
+    content: "→";
+    color: var(--accent);
+    font-weight: 600;
+    margin-right: 0.5em;
+  }
+  .reveal ul ul li::before {
+    content: "·";
+  }
+
+  .reveal .subtitle {
+    font-size: 1.1em;
+    color: var(--gray);
+    font-weight: 400;
+    margin-top: 0.2em;
+  }
+
+  .reveal .author {
+    font-size: 0.9em;
+    color: var(--gray);
+    margin-top: 1.5em;
+  }
+
+  .reveal .highlight {
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .reveal .highlight-green {
+    color: var(--green);
+    font-weight: 600;
+  }
+
+  .reveal .highlight-red {
+    color: var(--red);
+    font-weight: 600;
+  }
+
+  .reveal .highlight-orange {
+    color: var(--orange);
+    font-weight: 600;
+  }
+
+  /* Card layout */
+  .card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 20px;
+  }
+
+  .card-grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin-top: 20px;
+  }
+
+  .card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: left;
+  }
+
+  .card h3 {
+    font-size: 0.95em;
+    color: var(--accent);
+    margin: 0 0 8px 0;
+  }
+
+  .card p, .card li {
+    font-size: 0.75em;
+    margin: 4px 0;
+  }
+
+  .card.accent {
+    background: var(--accent-bg);
+    border-color: #bfdbfe;
+  }
+
+  .card.green {
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+  }
+
+  .card.green h3 { color: var(--green); }
+
+  .card.orange {
+    background: #fffbeb;
+    border-color: #fde68a;
+  }
+
+  .card.orange h3 { color: var(--orange); }
+
+  .card.red {
+    background: #fef2f2;
+    border-color: #fecaca;
+  }
+
+  .card.red h3 { color: var(--red); }
+
+  /* Math styling */
+  .math-block {
+    background: #f1f5f9;
+    border-radius: 8px;
+    padding: 16px 24px;
+    margin: 16px 0;
+    font-size: 0.95em;
+    text-align: center;
+  }
+
+  /* Results table */
+  .results-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.8em;
+  }
+
+  .results-table th {
+    background: var(--accent);
+    color: white;
+    padding: 10px 16px;
+    text-align: left;
+    font-weight: 500;
+  }
+
+  .results-table th:first-child {
+    border-radius: 8px 0 0 0;
+  }
+
+  .results-table th:last-child {
+    border-radius: 0 8px 0 0;
+  }
+
+  .results-table td {
+    padding: 10px 16px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .results-table tr:nth-child(even) {
+    background: #f8fafc;
+  }
+
+  .results-table tr.best td {
+    background: #ecfdf5;
+    font-weight: 600;
+  }
+
+  /* Two-column layout */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    align-items: start;
+  }
+
+  .two-col-wide {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 30px;
+    align-items: start;
+  }
+
+  /* Figure placeholder */
+  .figure-placeholder {
+    background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+    border: 2px dashed #94a3b8;
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--gray);
+    font-size: 0.8em;
+  }
+
+  .figure-placeholder.small {
+    padding: 20px 16px;
+  }
+
+  /* Metric callout */
+  .metric {
+    display: inline-block;
+    background: var(--accent-bg);
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 8px 16px;
+    margin: 4px;
+    font-size: 0.85em;
+  }
+
+  .metric .value {
+    font-size: 1.4em;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .metric .label {
+    font-size: 0.75em;
+    color: var(--gray);
+    display: block;
+  }
+
+  /* Slide number */
+  .reveal .slide-number {
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    color: var(--gray);
+  }
+
+  /* Tag / badge */
+  .tag {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 0.7em;
+    font-weight: 500;
+    margin: 0 4px;
+  }
+
+  .tag.blue { background: #dbeafe; color: #1d4ed8; }
+  .tag.green { background: #d1fae5; color: #047857; }
+  .tag.orange { background: #fef3c7; color: #b45309; }
+  .tag.red { background: #fee2e2; color: #b91c1c; }
+
+  /* Diagram boxes */
+  .flow-diagram {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 20px 0;
+  }
+
+  .flow-box {
+    background: var(--accent-bg);
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 0.75em;
+    font-weight: 500;
+    color: var(--accent);
+  }
+
+  .flow-arrow {
+    font-size: 1.2em;
+    color: var(--gray);
+  }
+
+  /* Pipeline diagram */
+  .pipeline {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    gap: 0;
+    margin: 16px 0;
+    font-size: 0.7em;
+  }
+
+  .pipe-block {
+    padding: 10px 14px;
+    border-radius: 8px;
+    text-align: center;
+    min-width: 100px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    line-height: 1.4;
+  }
+
+  .pipe-block .pipe-title {
+    font-weight: 700;
+    font-size: 0.95em;
+    margin-bottom: 3px;
+  }
+
+  .pipe-block .pipe-detail {
+    font-size: 0.8em;
+    opacity: 0.8;
+  }
+
+  .pipe-block.physics {
+    background: #dbeafe; border: 1px solid #93c5fd; color: #1e40af;
+  }
+  .pipe-block.control {
+    background: #d1fae5; border: 1px solid #6ee7b7; color: #065f46;
+  }
+  .pipe-block.sensor {
+    background: #fef3c7; border: 1px solid #fcd34d; color: #92400e;
+  }
+  .pipe-block.filter {
+    background: #fce7f3; border: 1px solid #f9a8d4; color: #9d174d;
+  }
+  .pipe-block.gimbal {
+    background: #ede9fe; border: 1px solid #c4b5fd; color: #5b21b6;
+  }
+
+  .pipe-arrow {
+    display: flex;
+    align-items: center;
+    font-size: 1.3em;
+    color: #94a3b8;
+    padding: 0 4px;
+    font-weight: 600;
+  }
+
+  .pipe-feedback {
+    text-align: center;
+    margin-top: 6px;
+    font-size: 0.65em;
+    color: #7c3aed;
+    font-weight: 500;
+  }
+
+  /* Key insight callout */
+  .insight {
+    background: linear-gradient(135deg, #eff6ff, #dbeafe);
+    border-left: 4px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 12px 20px;
+    margin: 16px 0;
+    font-size: 0.85em;
+    color: var(--dark);
+  }
+
+  .insight strong {
+    color: var(--accent);
+  }
+
+  /* Smaller text utility */
+  .small { font-size: 0.75em; }
+  .tiny { font-size: 0.65em; color: var(--gray); }
+
+  /* Image styling */
+  .reveal img {
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+
+  /* Override fragment styling */
+  .reveal .fragment.visible {
+    opacity: 1;
+  }
+</style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- ============================================ -->
+<!-- SLIDE 1: Title -->
+<!-- ============================================ -->
+<section>
+  <h1>Cooperative Multi-Drone<br>Target Tracking</h1>
+  <p class="subtitle">Distributed Bayesian Filtering with Bearing-Only Sensors</p>
+  <p class="author">
+    Alexandre Carlhammar<br>
+    <span class="small">AA273 — State Estimation and Filtering &nbsp;|&nbsp; Stanford, Winter 2026</span>
+  </p>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 2: Problem Statement -->
+<!-- ============================================ -->
+<section>
+  <h2>Problem Statement</h2>
+  <div class="two-col">
+    <div>
+      <p>Track a moving target using <span class="highlight">5 cooperative drones</span> with <span class="highlight">bearing-only cameras</span></p>
+      <ul>
+        <li>Each camera measures <strong>direction</strong>, not range</li>
+        <li>Single bearing = unobservable range</li>
+        <li>Multiple bearings from diverse angles → triangulation</li>
+        <li>Target dynamics <strong>unknown</strong> to the filter</li>
+      </ul>
+      <div class="insight">
+        <strong>Key challenge:</strong> Angular geometry of the drone constellation determines estimation accuracy
+      </div>
+    </div>
+    <div>
+      <img src="figures/geometry_matters.png" alt="Angular geometry matters" style="width: 100%; border-radius: 8px;">
+      <p class="tiny" style="margin-top: 8px;">Applications: search & rescue, wildlife monitoring, surveillance, defense</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 3: Simulation Environment -->
+<!-- ============================================ -->
+<section>
+  <h2>Simulation Platform</h2>
+
+  <!-- Pipeline diagram -->
+  <div class="pipeline">
+    <div class="pipe-block physics">
+      <div class="pipe-title">PyBullet</div>
+      <div class="pipe-detail">480 Hz</div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-block control">
+      <div class="pipe-title">PID</div>
+      <div class="pipe-detail">48 Hz</div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-block sensor">
+      <div class="pipe-title">Camera</div>
+      <div class="pipe-detail">az + el</div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-block filter">
+      <div class="pipe-title">Filter</div>
+      <div class="pipe-detail">\(\hat{\mathbf{x}}, \mathbf{P}\)</div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-block gimbal">
+      <div class="pipe-title">Gimbal</div>
+      <div class="pipe-detail">aims camera</div>
+    </div>
+  </div>
+  <div class="pipe-feedback">↺ Filter estimate aims gimbal → determines what sensor sees next</div>
+
+  <div class="two-col" style="margin-top: 20px; align-items: center;">
+    <div>
+      <img src="figures/3d_trajectory.png" alt="3D tracking scenario" style="width: 100%;">
+    </div>
+    <div>
+      <ul>
+        <li>Full 3D physics (PyBullet) — real mass, drag, downwash</li>
+        <li>URDF drone model — not point masses, real inertia</li>
+        <li>Cascaded PID: waypoint → attitude → motor RPMs</li>
+        <li>480 Hz physics, 48 Hz control (10:1 sub-stepping)</li>
+        <li>Target: 12 m/s, evasive, dynamics unknown to drones</li>
+        <li>Closed-loop: filter estimate aims the camera</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 3b: Noise Sources -->
+<!-- ============================================ -->
+<section>
+  <h2>Noise Sources</h2>
+
+  <div class="two-col" style="align-items: start;">
+    <div>
+      <div class="card red" style="margin-bottom: 14px;">
+        <h3>① Model Mismatch</h3>
+        <p>Filter assumes straight-line motion (σ_a = 0.6 m/s²)</p>
+        <p>Target actually turns, accelerates, dives</p>
+        <p><em>→ Prediction diverges during maneuvers</em></p>
+      </div>
+      <div class="card orange" style="margin-bottom: 14px;">
+        <h3>② Bearing Noise (Range-Dependent)</h3>
+        <p>\(\sigma(r) = 2° \cdot r\, /\, 100\text{m}\)</p>
+        <p>50 m → 1° &nbsp;|&nbsp; 200 m → 4° &nbsp;|&nbsp; 300 m → 6°</p>
+        <p><em>→ Farther drones give worse measurements</em></p>
+      </div>
+    </div>
+    <div>
+      <div class="card orange" style="margin-bottom: 14px;">
+        <h3>③ Detection Dropout</h3>
+        <p>\(p(r) = 0.99 \cdot e^{-kr^2}\), drops to 50% at 250 m</p>
+        <p>Camera FOV ±15° — miss if gimbal is off</p>
+        <p><em>→ Drones intermittently go blind</em></p>
+      </div>
+      <div class="card" style="background:#f5f3ff; border-color:#c4b5fd;">
+        <h3>④ Gimbal Feedback Loop</h3>
+        <p>Good estimate → on target → measurement → better ✓</p>
+        <p>Bad estimate → off target → nothing → stays bad ✗</p>
+        <p><em>→ Estimation errors can snowball</em></p>
+      </div>
+    </div>
+  </div>
+
+  <img src="figures/sensor_model.png" alt="Sensor noise and detection vs range" style="width: 65%; margin: 8px auto 0; display: block;">
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 4: State & Measurement Model -->
+<!-- ============================================ -->
+<section>
+  <h2>State & Dynamics Model</h2>
+  <div class="two-col">
+    <div>
+      <h3 style="margin-bottom: 6px;">State (6D) &amp; Process Model</h3>
+      <div class="math-block" style="padding: 10px 16px; font-size: 0.85em;">
+        \(\mathbf{x} = [p_x, p_y, p_z, v_x, v_y, v_z]^\top\)
+      </div>
+      <div class="math-block" style="padding: 10px 16px; text-align: left; font-size: 0.82em;">
+        \(\mathbf{x}_{k+1} = \mathbf{F}\mathbf{x}_k + \mathbf{w}_k, \quad \mathbf{w}_k \sim \mathcal{N}(0, \mathbf{Q})\)<br><br>
+        \(\mathbf{F} = \begin{bmatrix} \mathbf{I}_3 & \Delta t \cdot \mathbf{I}_3 \\ \mathbf{0} & \mathbf{I}_3 \end{bmatrix}\)
+      </div>
+      <p class="small">\(\mathbf{Q}\): piecewise-constant white noise, σ_a = 0.6 m/s²</p>
+
+      <h3 style="margin-top: 12px; margin-bottom: 6px;">Measurement (per drone \(i\))</h3>
+      <div class="math-block" style="padding: 10px 16px; text-align: left; font-size: 0.82em;">
+        \(\mathbf{z}_i = h(\mathbf{x}, \mathbf{p}_i) + \mathbf{v}_i\)<br><br>
+        \(h = \begin{bmatrix} \text{atan2}(\Delta y_i, \Delta x_i) \\ \arcsin(\Delta z_i / r_i) \end{bmatrix}\)
+      </div>
+      <p class="small">\(\Delta_i = \mathbf{x}_{1:3} - \mathbf{p}_i\), \(r_i = \|\Delta_i\|\), \(\;\mathbf{v}_i \sim \mathcal{N}(0, \sigma^2(r_i)\,\mathbf{I}_2)\)</p>
+    </div>
+    <div>
+      <h3 style="margin-bottom: 6px;">Jacobian \(\mathbf{H}_i = \partial h / \partial \mathbf{x}\)</h3>
+      <div class="math-block" style="padding: 12px 16px; font-size: 0.8em;">
+        \(\mathbf{H}_i = \begin{bmatrix} \frac{-\Delta y}{d_{xy}^2} & \frac{\Delta x}{d_{xy}^2} & 0 & 0 & 0 & 0 \\ \frac{-\Delta x \Delta z}{r^2 d_{xy}} & \frac{-\Delta y \Delta z}{r^2 d_{xy}} & \frac{d_{xy}}{r^2} & 0 & 0 & 0 \end{bmatrix}\)
+      </div>
+      <p class="small">\(d_{xy} = \sqrt{\Delta x^2 + \Delta y^2}\)</p>
+
+      <div class="insight" style="margin-top: 14px;">
+        <strong>Key properties:</strong>
+        <p class="small" style="margin: 4px 0;">→ Nonlinear h(x) — relinearized at each step</p>
+        <p class="small" style="margin: 4px 0;">→ Velocity columns are zero — bearing measures position only</p>
+        <p class="small" style="margin: 4px 0;">→ Singularity when \(d_{xy} \to 0\) (target directly above/below)</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 5: Layer 1 — Centralized EKF / UKF / PF -->
+<!-- ============================================ -->
+<section>
+  <h2>Centralized Filtering: EKF, UKF, Particle Filter</h2>
+  <div class="two-col" style="margin-bottom: 6px;">
+    <div>
+      <p class="small" style="margin-bottom: 6px;"><strong>Setup:</strong> Single fusion node receives all 5 bearing streams. 3000 steps (~63 s), evasive target (12 m/s, turns up to 2 rad/s), EKF-driven gimbal.</p>
+      <div class="card" style="margin-bottom: 6px; padding: 12px 16px;">
+        <h3>EKF — First-order Taylor via Jacobian H</h3>
+        <p>Fast (22 kHz). Linearization error underestimates range uncertainty.</p>
+      </div>
+      <div class="card" style="margin-bottom: 6px; padding: 12px 16px;">
+        <h3>UKF — 13 sigma points through h(x)</h3>
+        <p>No Jacobian needed. Better nonlinear capture (5.6 kHz).</p>
+      </div>
+      <div class="card accent" style="padding: 12px 16px;">
+        <h3>PF — 2000 particles, full distribution</h3>
+        <p>Handles range ambiguity & multimodality. 300x slower (73 Hz).</p>
+      </div>
+    </div>
+    <div>
+      <table class="results-table" style="margin-top: 0;">
+        <tr><th>Filter</th><th>RMSE</th><th>NEES (→6)</th><th>Speed</th></tr>
+        <tr><td>EKF</td><td>42.0 m</td><td><span class="highlight-red">5,249</span></td><td>22 kHz</td></tr>
+        <tr><td>UKF</td><td>37.0 m</td><td><span class="highlight-red">5,117</span></td><td>5.6 kHz</td></tr>
+        <tr class="best"><td>PF</td><td><strong>11.2 m</strong></td><td><span class="highlight-green">12.9</span></td><td>73 Hz</td></tr>
+      </table>
+      <div class="insight" style="margin-top: 8px; padding: 10px 16px;">
+        <strong>NEES</strong> = \(\mathbf{e}^\top \mathbf{P}^{-1} \mathbf{e}\). Should equal state dimension (6) if filter is <em>consistent</em>. EKF/UKF report NEES ≈ 5,000 → covariance 800x too small. PF at 13 is the only honest filter.
+      </div>
+    </div>
+  </div>
+  <img src="figures/layer1_ekf_ukf_pf.png" alt="EKF vs UKF vs PF" style="width: 100%;">
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 6: IMM — Interacting Multiple Model -->
+<!-- ============================================ -->
+<section>
+  <h2>Interacting Multiple Model (IMM)</h2>
+  <div class="two-col" style="margin-bottom: 6px;">
+    <div>
+      <p class="small" style="margin-bottom: 6px;">EKF/UKF assume constant-velocity (σ_a = 0.6). Real target: mean |a| = 12 m/s², peaks at 40 m/s². IMM runs <strong>3 parallel EKFs</strong>, blends by measurement likelihood:</p>
+      <div class="card-grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 6px;">
+        <div class="card" style="padding: 10px 12px;">
+          <h3 style="font-size: 0.8em;">Gentle</h3>
+          <p style="font-size: 0.7em;">σ_a = 0.3 m/s²<br>Coasting</p>
+        </div>
+        <div class="card orange" style="padding: 10px 12px;">
+          <h3 style="font-size: 0.8em;">Moderate</h3>
+          <p style="font-size: 0.7em;">σ_a = 5 m/s²<br>Turns</p>
+        </div>
+        <div class="card red" style="padding: 10px 12px;">
+          <h3 style="font-size: 0.8em;">Aggressive</h3>
+          <p style="font-size: 0.7em;">σ_a = 25 m/s²<br>Hard maneuvers</p>
+        </div>
+      </div>
+      <div class="insight" style="margin-top: 8px; padding: 10px 16px;">
+        <strong>Compute:</strong> IMM at 7.2 kHz is only 3x slower than EKF — <strong>100x faster than PF</strong>. Real-time viable.
+      </div>
+    </div>
+    <div>
+      <table class="results-table" style="margin-top: 0;">
+        <tr><th>Filter</th><th>RMSE</th><th>Final</th><th>NEES (→6)</th></tr>
+        <tr><td>EKF</td><td>42.0 m</td><td>39.6 m</td><td><span class="highlight-red">5,249</span></td></tr>
+        <tr><td>UKF</td><td>37.0 m</td><td>39.6 m</td><td><span class="highlight-red">5,117</span></td></tr>
+        <tr><td>IMM</td><td>24.7 m</td><td><strong>3.9 m</strong></td><td>105</td></tr>
+        <tr class="best"><td>PF</td><td><strong>11.2 m</strong></td><td>6.2 m</td><td><span class="highlight-green">12.9</span></td></tr>
+      </table>
+      <div class="insight" style="margin-top: 8px; padding: 10px 16px;">
+        <strong>IMM vs EKF:</strong> 40% lower RMSE, 10x better final error, 50x better NEES. Bridges the gap to PF at a fraction of the compute cost.
+      </div>
+    </div>
+  </div>
+  <img src="figures/layer1_imm.png" alt="IMM mode probs and comparison" style="width: 100%;">
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 7: Layer 2 — Why Distribute & How -->
+<!-- ============================================ -->
+<section>
+  <h2>Layer 2: Distributed Consensus Filtering</h2>
+  <div class="two-col" style="margin-bottom: 6px;">
+    <div>
+      <p class="small" style="margin-bottom: 8px;">Layer 1 assumed a <strong>centralized fusion node</strong> — all measurements routed to one place. In reality: no guaranteed central server, limited comm range, link failures. Each drone must run its <strong>own local filter</strong> and share information with neighbors.</p>
+
+      <h3 style="margin-bottom: 4px;">Why Information Form?</h3>
+      <p class="small" style="margin-bottom: 4px;">In covariance form, fusing two estimates requires inverting and combining P matrices — messy. In <strong>information form</strong>, fusion is <em>additive</em>:</p>
+      <div class="math-block" style="padding: 8px 16px; font-size: 0.82em; text-align: left;">
+        \(\mathbf{Y}_i = \mathbf{P}_i^{-1}\) (information matrix) &nbsp; \(\mathbf{y}_i = \mathbf{P}_i^{-1}\hat{\mathbf{x}}_i\) (info vector)<br><br>
+        Measurement: \(\mathbf{Y}_i^+ = \mathbf{Y}_i^- + N \cdot \underbrace{\mathbf{H}_i^\top \mathbf{R}_i^{-1} \mathbf{H}_i}_{\text{local info contribution}}\)<br><br>
+        Consensus: \(\mathbf{Y}_i \leftarrow \mathbf{Y}_i + \varepsilon \sum_{j \in \mathcal{N}_i} (\mathbf{Y}_j - \mathbf{Y}_i)\)
+      </div>
+      <p class="tiny" style="margin-top: 4px;">N-scaling: each drone multiplies its local contribution by N so that averaging across the swarm recovers the centralized sum.</p>
+    </div>
+    <div>
+      <h3 style="margin-bottom: 4px;">Communication Topologies</h3>
+      <img src="figures/topology_diagrams.png" alt="Ring / Star / Full" style="width: 100%; border-radius: 8px;">
+      <p class="small" style="margin-top: 6px;">Works on <strong>any connected graph</strong> for any N. Each drone only talks to its neighbors — no global knowledge needed.</p>
+
+      <div class="flow-diagram" style="margin-top: 10px;">
+        <span class="flow-box">Local<br>Predict</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-box">Local<br>Update</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-box">L Consensus<br>Rounds</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-box">Fused \(\hat{\mathbf{x}}_i\)</span>
+      </div>
+
+      <div class="card accent" style="margin-top: 10px; padding: 10px 14px;">
+        <h3 style="font-size: 0.85em;">Metropolis-Hastings Weights</h3>
+        <p style="font-size: 0.72em;">\(w_{ij} = \frac{1}{1 + \max(d_i, d_j)}\) — only needs neighbor degree, not swarm size N. Doubly stochastic → guaranteed convergence to true average.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 8: Layer 2 — Results & Robustness -->
+<!-- ============================================ -->
+<section>
+  <h2>Layer 2: Consensus Results</h2>
+  <div class="two-col" style="margin-bottom: 6px;">
+    <div>
+      <img src="figures/layer2_per_drone.png" alt="Per-drone estimates" style="width: 100%; border-radius: 8px;">
+      <p class="tiny" style="margin-top: 4px;">5 local estimates (colored) vs consensus average (dashed blue) vs truth (black). All drones converge despite only seeing local bearings.</p>
+
+      <img src="figures/layer2_disagreement.png" alt="Disagreement" style="width: 100%; border-radius: 8px; margin-top: 8px;">
+    </div>
+    <div>
+      <div class="card green" style="margin-bottom: 8px; padding: 12px 14px;">
+        <h3>Centralized Equivalence</h3>
+        <p>Full topology + L=50 iterations → <strong>exact match</strong> with god-node centralized filter (diff = 0 to machine precision)</p>
+      </div>
+
+      <div class="card orange" style="margin-bottom: 8px; padding: 12px 14px;">
+        <h3>Graceful Degradation</h3>
+        <p>30% random link dropout per step → consensus still converges</p>
+        <p>Ring topology (2 neighbors each) → slower but functional</p>
+        <p>Star hub failure → graceful fallback</p>
+      </div>
+
+      <div class="card" style="margin-bottom: 8px; padding: 12px 14px;">
+        <h3>Two Variants Implemented</h3>
+        <p><strong>Consensus EKF</strong> — single CV model per node</p>
+        <p><strong>Consensus IMM</strong> — 3-mode IMM per node + info-form consensus. Each drone detects maneuvers locally.</p>
+      </div>
+
+      <div class="insight" style="padding: 10px 16px;">
+        <strong>Key finding:</strong> For N=5, consensus overhead is negligible. The bottleneck is <em>bearing geometry</em>, not how you fuse.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 10: Key Findings & Takeaways -->
+<!-- ============================================ -->
+<section>
+  <h2>Key Findings</h2>
+  <div class="card-grid">
+    <div class="card green">
+      <h3>1. Geometry Dominates</h3>
+      <p>Angular diversity of the drone constellation is the primary driver of estimation accuracy</p>
+      <p>Normal spawn (diverse): <span class="highlight-green">tr(P) = 9.6</span></p>
+      <p>Cluster spawn (collinear): <span class="highlight-red">tr(P) = 6,382</span></p>
+    </div>
+    <div class="card accent">
+      <h3>2. Consensus = Centralized</h3>
+      <p>Full topology with sufficient iterations achieves exact centralized performance</p>
+      <p>For small swarms (N=5), fusion is <em>not</em> the bottleneck</p>
+    </div>
+    <div class="card orange">
+      <h3>3. IMM Handles Model Mismatch</h3>
+      <p>Target dynamics unknown to filter — IMM adapts mode probabilities to match actual maneuvers</p>
+      <p>Robust to CV/CA model uncertainty</p>
+    </div>
+    <div class="card">
+      <h3>4. Gimbal Feedback Loop</h3>
+      <p>Filter estimate drives camera aim → better measurements → better estimate</p>
+      <p>Creates emergent self-improving behavior</p>
+    </div>
+  </div>
+
+  <div class="insight" style="margin-top: 20px;">
+    <strong>Bottom line:</strong> In bearing-only tracking, <em>where you look from</em> matters more than <em>how you fuse</em>.
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 11: Thank You -->
+<!-- ============================================ -->
+<section>
+  <h1>Thank You</h1>
+  <p class="subtitle">Questions?</p>
+  <div style="margin-top: 40px;">
+    <p class="small">Alexandre Carlhammar &nbsp;|&nbsp; <a href="mailto:acarlham@stanford.edu">acarlham@stanford.edu</a></p>
+    <p class="small"><a href="https://github.com/alex-crlhmmr/Cooperative-Multi-Drone-Target-Tracking">github.com/alex-crlhmmr/Cooperative-Multi-Drone-Target-Tracking</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/reveal.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.6.1/plugin/math/math.min.js"></script>
+<script>
+Reveal.initialize({
+  hash: true,
+  slideNumber: 'c/t',
+  width: 1280,
+  height: 720,
+  margin: 0.06,
+  transition: 'slide',
+  transitionSpeed: 'default',
+  plugins: [ RevealMath.MathJax3 ],
+  mathjax3: {
+    mathjax: 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js',
+    tex: {
+      inlineMath: [['\\(', '\\)']],
+      displayMath: [['\\[', '\\]']],
+    },
+  },
+});
+</script>
+</body>
+</html>

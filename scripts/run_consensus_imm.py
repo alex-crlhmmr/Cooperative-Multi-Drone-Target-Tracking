@@ -340,6 +340,7 @@ def compute_metrics(estimates, true_states, nees, init_steps, filter_names,
         valid_nees = valid_nees[~np.isnan(valid_nees)]
         anees = np.mean(valid_nees) if len(valid_nees) > 0 else np.nan
 
+        # Information matrix convergence: find first step where position error stays below 20m for 5 consecutive steps
         conv_step = T
         for t in range(t0, T - 5):
             if np.all(pos_err[t - t0:t - t0 + 5] < 20.0):
@@ -417,6 +418,12 @@ def main():
                         help="Comma-separated filter list: ekf,imm,consensus-ekf,consensus-imm,pf")
     parser.add_argument("--save", action="store_true")
     parser.add_argument("--no-replay", action="store_true")
+    parser.add_argument("--save-video", type=str, default=None,
+                        help="Save replay animation as MP4 video")
+    parser.add_argument("--follow-target", action="store_true",
+                        help="Camera follows the target (zoomed in)")
+    parser.add_argument("--follow-radius", type=float, default=400.0,
+                        help="Zoom radius when following target (meters)")
     args = parser.parse_args()
 
     cfg = load_config()
@@ -600,6 +607,9 @@ def main():
                 title=f"{' vs '.join(title_parts)} — {topologies[0]} — {traj_type}",
                 plot_box=plot_box,
                 topology_name=topologies[0],
+                save_path=args.save_video if cimm_idx is None else None,
+                follow_target=args.follow_target,
+                follow_radius=args.follow_radius,
             )
 
         # Replay 2: Consensus IMM vs Centralized IMM
@@ -625,6 +635,9 @@ def main():
                 title=f"{' vs '.join(title_parts)} — {topologies[0]} — {traj_type}",
                 plot_box=plot_box,
                 topology_name=topologies[0],
+                save_path=args.save_video,
+                follow_target=args.follow_target,
+                follow_radius=args.follow_radius,
             )
 
     # Save data

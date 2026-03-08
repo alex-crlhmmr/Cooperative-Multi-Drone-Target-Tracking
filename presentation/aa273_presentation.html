@@ -772,7 +772,56 @@
 </section>
 
 <!-- ============================================ -->
-<!-- SLIDE 11: Thank You -->
+<!-- SLIDE 11: Future Work — RL Active Sensing -->
+<!-- ============================================ -->
+<section>
+  <h2>Next Steps: RL-Based Active Sensor Placement</h2>
+  <div class="two-col">
+    <div>
+      <p class="small" style="margin-bottom: 8px;">Layers 1–2 showed that <strong>bearing geometry dominates</strong> estimation accuracy. Natural next step: <em>learn</em> where to fly to maximize information.</p>
+
+      <div class="card accent" style="margin-bottom: 8px; padding: 12px 14px;">
+        <h3>Approach</h3>
+        <p>PPO agent outputs 3D velocity commands per drone</p>
+        <p>Reward: minimize tr(P) from the consensus filter</p>
+        <p>Obs: egocentric relative positions, covariance eigenvalues, neighbor detection stats</p>
+      </div>
+
+      <div class="card green" style="margin-bottom: 8px; padding: 12px 14px;">
+        <h3>Early Result — Cluster Spawn (Hard Case)</h3>
+        <p>Drones start collinear → worst-case geometry</p>
+        <p>Baseline chase+offset: <span class="highlight-red">tr(P) = 2.5M</span> (diverges)</p>
+        <p>RL policy: <span class="highlight-green">tr(P) = 6,201</span> — <strong>400x better</strong></p>
+      </div>
+
+      <div class="insight" style="padding: 10px 16px;">
+        <strong>Ongoing:</strong> High variance across episodes — RL sometimes finds excellent geometry, sometimes doesn't. Stability and curriculum learning are active work.
+      </div>
+    </div>
+    <div>
+      <h3 style="margin-bottom: 6px;">Preliminary Results (10 episodes, 10K steps)</h3>
+      <table class="results-table" style="margin-top: 0;">
+        <tr><th>Scenario</th><th>tr(P)</th><th>RMSE</th></tr>
+        <tr class="best"><td>Baseline, normal spawn</td><td><strong>9.6</strong></td><td>3.9 m</td></tr>
+        <tr><td>Formation oracle, normal</td><td>29.1</td><td>4.5 m</td></tr>
+        <tr><td>RL policy, normal spawn</td><td>258</td><td>8.4 m</td></tr>
+        <tr><td>RL policy, cluster spawn</td><td>6,201</td><td>1,698 m</td></tr>
+        <tr><td>Baseline, cluster spawn</td><td><span class="highlight-red">2.5M</span></td><td>1,936 m</td></tr>
+      </table>
+      <p class="tiny" style="margin-top: 6px;">Normal spawn = diverse initial geometry (easy). Cluster = collinear start (hard). RL shines when initial geometry is bad.</p>
+
+      <div class="card orange" style="margin-top: 10px; padding: 12px 14px;">
+        <h3>Open Challenges</h3>
+        <p>PPO instability: performance peaks at 5–8M steps then degrades</p>
+        <p>Normal spawn baseline still wins — RL hasn't matched good initial geometry</p>
+        <p>Two-phase (spread then track) didn't improve over single-phase</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- SLIDE 12: Thank You -->
 <!-- ============================================ -->
 <section>
   <h1>Thank You</h1>

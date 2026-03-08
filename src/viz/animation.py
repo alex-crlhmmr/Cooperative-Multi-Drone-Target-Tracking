@@ -641,6 +641,9 @@ def animate_consensus_tracking(
     trail_len: int = 80,
     plot_box: float | None = None,
     topology_name: str = "full",
+    save_path: str | None = None,
+    follow_target: bool = False,
+    follow_radius: float = 400.0,
 ):
     """Animate 3D consensus tracking with per-drone local estimates and comm links.
 
@@ -984,9 +987,12 @@ def animate_consensus_tracking(
         true_text.set_text(
             f'TRUE     x:{tgt[0]:8.1f}  y:{tgt[1]:8.1f}  z:{tgt[2]:8.1f}')
 
-        c_err = np.linalg.norm(tgt - ce)
-        central_text.set_text(
-            f'CENTRAL  x:{ce[0]:8.1f}  y:{ce[1]:8.1f}  z:{ce[2]:8.1f}  err:{c_err:6.1f}m')
+        if centralized_est is not None:
+            c_err = np.linalg.norm(tgt - ce)
+            central_text.set_text(
+                f'CENTRAL  x:{ce[0]:8.1f}  y:{ce[1]:8.1f}  z:{ce[2]:8.1f}  err:{c_err:6.1f}m')
+        else:
+            central_text.set_text('')
 
         co_err = np.linalg.norm(tgt - co)
         cons_text.set_text(
@@ -999,7 +1005,10 @@ def animate_consensus_tracking(
                 f'D{i} x:{le[0]:7.1f} y:{le[1]:7.1f} z:{le[2]:7.1f} err:{le_err:5.1f}m')
 
         disagree_text.set_text(f'Disagreement: {disagreements[t]:8.2f} m')
-        central_err_text.set_text(f'Centralized err: {c_err:8.2f} m')
+        if centralized_est is not None:
+            central_err_text.set_text(f'Centralized err: {c_err:8.2f} m')
+        else:
+            central_err_text.set_text('')
         cons_err_text.set_text(f'Consensus err:   {co_err:8.2f} m')
 
         for i in range(num_drones):
@@ -1008,8 +1017,40 @@ def animate_consensus_tracking(
             obs_texts[i].set_text(
                 f'Obs{i} x:{pos[0]:7.1f} y:{pos[1]:7.1f} z:{pos[2]:7.1f} d:{dist:.0f}m')
 
+        # Auto-zoom: follow target
+        if follow_target:
+            r = follow_radius
+            ax.set_xlim(tgt[0] - r, tgt[0] + r)
+            ax.set_ylim(tgt[1] - r, tgt[1] + r)
+            ax.set_zlim(max(0, tgt[2] - r), tgt[2] + r)
+
         fig.canvas.draw_idle()
 
+    # --- Save to video ---
+    if save_path is not None:
+        from matplotlib.animation import FuncAnimation as _FA, FFMpegWriter
+        # skip=4 → 4x speed at 30 fps
+        skip = 4
+        frame_list = list(range(0, T, skip))
+        n_frames = len(frame_list)
+        print(f"  Saving video to {save_path} ({n_frames} frames, {skip}x speed)...")
+
+        def save_update(t):
+            _render_frame(t)
+            if t % (skip * 50) == 0:
+                pct = t / T * 100
+                print(f"    {pct:.0f}%", end="", flush=True)
+            return []
+
+        save_anim = _FA(fig, save_update, frames=frame_list,
+                        blit=False, cache_frame_data=False)
+        writer = FFMpegWriter(fps=30, metadata={'title': title}, bitrate=4000)
+        save_anim.save(save_path, writer=writer, dpi=120)
+        print(f"\n  Video saved: {save_path}")
+        plt.close(fig)
+        return None
+
+    # --- Interactive mode ---
     def on_slider(val):
         state["frame"] = int(val)
         _render_frame(state["frame"])

@@ -20,7 +20,7 @@ import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from src.env.tracking_aviary import TrackingAviary, spawn_in_hollow_sphere
-from src.filters import EKF, UKF, PF
+from src.filters import EKF, UKF, PF, IMM
 from src.viz.filter_plots import (
     plot_state_estimates, plot_rmse, plot_nees,
     plot_covariance_trace, plot_3d_estimate_trajectory,
@@ -65,7 +65,19 @@ def create_filters(cfg: dict, dt: float) -> list:
         jitter_pos=pf_cfg.get("jitter_pos", 1.0),
         jitter_vel=pf_cfg.get("jitter_vel", 0.5),
     )
-    return [ekf, ukf, pf]
+    imm = IMM(
+        dt,
+        sigma_a_modes=[0.3, 5.0, 25.0],
+        sigma_bearing=sigma_bearing,
+        range_ref=range_ref,
+        transition_matrix=np.array([
+            [0.90, 0.07, 0.03],
+            [0.05, 0.85, 0.10],
+            [0.03, 0.12, 0.85],
+        ]),
+        P0_pos=P0_pos, P0_vel=P0_vel,
+    )
+    return [ekf, ukf, pf, imm]
 
 
 def run_sim_with_filters(cfg, filters, gui, traj_type, episode_length, seed,
@@ -129,6 +141,7 @@ def run_sim_with_filters(cfg, filters, gui, traj_type, episode_length, seed,
     covariances = np.zeros((n_filters, T, 6, 6))
     nees = np.zeros((n_filters, T))
     init_steps = np.zeros(n_filters, dtype=int)
+    mode_probs_history = []  # for IMM mode probabilities
 
     import pybullet as p
     if gui:
@@ -195,6 +208,12 @@ def run_sim_with_filters(cfg, filters, gui, traj_type, episode_length, seed,
             except np.linalg.LinAlgError:
                 nees[fi, step_i] = np.nan
 
+        # Record IMM mode probabilities
+        for fi, filt in enumerate(filters):
+            if hasattr(filt, 'get_mode_probabilities'):
+                mode_probs_history.append(filt.get_mode_probabilities().copy())
+                break
+
         actual_steps = step_i + 1
 
         if gui and step_i % 20 == 0:
@@ -214,7 +233,8 @@ def run_sim_with_filters(cfg, filters, gui, traj_type, episode_length, seed,
     covariances = covariances[:, :actual_steps]
     nees = nees[:, :actual_steps]
 
-    return record, estimates, covariances, nees, init_steps
+    mode_probs = np.array(mode_probs_history) if mode_probs_history else None
+    return record, estimates, covariances, nees, init_steps, mode_probs
 
 
 def compute_metrics(estimates, true_states, nees, init_steps, filter_names):
@@ -290,7 +310,7 @@ def main():
           f"seed={args.seed}, gimbal={gimbal_label}")
 
     t0 = time.time()
-    record, estimates, covariances, nees, init_steps = run_sim_with_filters(
+    record, estimates, covariances, nees, init_steps, mode_probs = run_sim_with_filters(
         cfg, filters, gui, traj_type, args.steps, args.seed,
         gimbal_filter_idx=gimbal_idx,
     )
@@ -345,8 +365,7 @@ def main():
 
     # Save filter data
     if args.save:
-        np.savez_compressed(
-            os.path.join(results_dir, f"filter_data_{traj_type}_s{args.seed}.npz"),
+        save_dict = dict(
             estimates=estimates,
             covariances=covariances,
             nees=nees,
@@ -356,6 +375,12 @@ def main():
             filter_names=filter_names,
             dt=dt,
             traj_type=traj_type,
+        )
+        if mode_probs is not None:
+            save_dict["imm_mode_probs"] = mode_probs
+        np.savez_compressed(
+            os.path.join(results_dir, f"filter_data_{traj_type}_s{args.seed}.npz"),
+            **save_dict,
         )
         print(f"  Data saved to {results_dir}/")
 
